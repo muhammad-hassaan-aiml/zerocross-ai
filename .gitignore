@@ -1,0 +1,16 @@
+build/
+cmake-build-*/
+*.so
+*.pyd
+*.dll
+__pycache__/
+*.pyc
+.venv/
+venv/
+models/*.pth
+!models/best.pth
+data/replay_buffer/*
+!data/replay_buffer/.gitkeep
+.ipynb_checkpoints/
+.DS_Store
+.vscode/
