@@ -53,7 +53,7 @@ void test_free_move_trigger() {
 }
 
 void test_random_simulation_loop() {
-        
+    std::mt19937 rng(42);    
 
     for (int episode = 0; episode < 100; ++episode) {
         GameState state;
