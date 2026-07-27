@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import numpy as np
 import zerocross_engine
 from network import ZeroCrossNet
+from augment import get_symmetries
 
 class SelfPlayWorker:
     def __init__(self, net, num_concurrent_games=100, mcts_simulations=400):
@@ -84,9 +85,13 @@ class SelfPlayWorker:
         winner = self.states[game_idx].get_winner() 
         
         for step in self.game_histories[game_idx]:
-            # Assign +1 for a win, -1 for a loss, 0 for a draw
             reward = 1.0 if step['player'] == winner else (-1.0 if winner != 0 else 0.0)
-            self.completed_games_data.append((step['state'], step['policy'], reward))
+            
+            # Apply D4 Symmetry: Turn 1 move into 8 augmented moves
+            augmented_steps = get_symmetries(step['state'], step['policy'], reward)
+            
+            # Extend the dataset with all 8 variations
+            self.completed_games_data.extend(augmented_steps)
             
         self.game_histories[game_idx] = []
 
