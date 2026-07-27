@@ -27,3 +27,13 @@ add_executable(test_mcts
 target_include_directories(test_mcts PRIVATE include)
 target_compile_options(test_mcts PRIVATE -fsanitize=address -fsanitize=undefined -g)
 target_link_options(test_mcts PRIVATE -fsanitize=address -fsanitize=undefined)
+
+find_package(pybind11 REQUIRED)
+
+pybind11_add_module(zerocross_engine
+    src/bindings.cpp
+    src/game_state.cpp
+    src/mcts.cpp
+)
+target_include_directories(zerocross_engine PRIVATE include)
+target_compile_options(zerocross_engine PRIVATE -O3 -fPIC)

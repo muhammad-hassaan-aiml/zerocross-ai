@@ -30,6 +30,9 @@ public:
     // Evaluates if the global macro-board has reached a terminal state (win or fully drawn)
     bool is_terminal() const;
 
+    // Returns 1 for Player 1 (X), -1 for Player 2 (O), and 0 for a draw or unfinished game
+    int get_winner() const;
+
     // Reconstructs an exact state from a flat Python/NumPy array representation
     static GameState from_array(const std::vector<int>& board, int active_grid);
 
