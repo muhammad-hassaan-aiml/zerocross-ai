@@ -36,8 +36,11 @@ float MCTSTree::calculate_puct(std::shared_ptr<MCTSNode> parent, std::shared_ptr
     // Q is the average value of the child node. If unvisited, it defaults to 0.
     float q_value = (child->visit_count > 0) ? (child->total_value / child->visit_count) : 0.0f;
     
+    // DeepMind's Dynamic Exploration Constant (replaces static C_PUCT)
+    float c_puct = 1.25f + std::log((parent->visit_count + 19652.0f + 1.0f) / 19652.0f);
+    
     // U is the exploration term based on the parent's visit count and the child's prior probability
-    float u_value = C_PUCT * child->prior_p * std::sqrt(static_cast<float>(parent->visit_count)) / (1.0f + child->visit_count);
+    float u_value = c_puct * child->prior_p * std::sqrt(static_cast<float>(parent->visit_count)) / (1.0f + child->visit_count);
     
     return q_value + u_value;
 }
