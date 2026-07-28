@@ -173,6 +173,12 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
         torch.save(buffer_data, archive_path)
         print(f"Archived chunk saved to {archive_path}")
         
+        max_archives = 3
+        old_archive_path = os.path.join(drive_dir, f"replay_buffer_iter_{current_iter - max_archives}.pt")
+        if os.path.exists(old_archive_path):
+            os.remove(old_archive_path)
+            print(f"Deleted old archive {old_archive_path} to save space")
+        
         total_iter_duration = time.time() - iter_start_time
         
         print("\nITERATION BENCHMARK REPORT")
