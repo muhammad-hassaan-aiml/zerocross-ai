@@ -8,6 +8,8 @@ __pycache__/
 .venv/
 venv/
 models/*.pth
+models/*.pt
+models/*.csv
 !models/best.pth
 data/replay_buffer/*
 !data/replay_buffer/.gitkeep
