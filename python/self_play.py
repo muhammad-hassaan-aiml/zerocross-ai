@@ -5,10 +5,11 @@ from network import ZeroCrossNet
 from augment import get_symmetries
 
 class SelfPlayWorker:
-    def __init__(self, net, num_concurrent_games=100, mcts_simulations=400):
+    def __init__(self, net, num_concurrent_games=100, mcts_simulations=400, temperature_moves=30):
         self.net = net
         self.num_games = num_concurrent_games
         self.simulations = mcts_simulations
+        self.temp_moves = temperature_moves
         
         self.states = [zerocross_engine.GameState() for _ in range(self.num_games)]
         self.trees = [zerocross_engine.MCTSTree(self.states[i], True) for i in range(self.num_games)]
@@ -61,7 +62,7 @@ class SelfPlayWorker:
             for i in range(self.num_games):
                 if self.trees[i].is_done(self.simulations):
                     # Temperature 1.0 for initial exploration, 0.0 (argmax) for late game
-                    temp = 1.0 if len(self.game_histories[i]) < 15 else 0.0
+                    temp = 1.0 if len(self.game_histories[i]) < self.temp_moves else 0.0
                     raw_policy = self.trees[i].root_policy(temp)
                     
                     mcts_policy = np.array(raw_policy, dtype=np.float64)

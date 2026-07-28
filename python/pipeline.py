@@ -94,8 +94,8 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
         
         print("\n[1/4] Generating Batched Self Play Data")
         gen_start = time.time()
-        worker = SelfPlayWorker(best_net, num_concurrent_games=10, mcts_simulations=50)
-        new_samples = worker.generate_data(total_games_to_play=2) 
+        worker = SelfPlayWorker(best_net, num_concurrent_games=10, mcts_simulations=50, temperature_moves=30)
+        new_samples = worker.generate_data(total_games_to_play=2)
         gen_duration = time.time() - gen_start
         
         replay_buffer.extend(new_samples)
