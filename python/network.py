@@ -3,7 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class ResBlock(nn.Module):
-    def __init__(self, channels):
+    """
+    Standard Residual Block with Batch Normalization.
+    Preserves spatial representation while deepening network feature extraction.
+    """
+    def __init__(self, channels=128):
         super().__init__()
         self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(channels)
@@ -14,37 +18,45 @@ class ResBlock(nn.Module):
         identity = x
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
-        # Skip connection safely before the final ReLU
-        out += identity
-        out = F.relu(out)
-        return out
+        out += identity  # Skip connection
+        return F.relu(out)
+
 
 class ZeroCrossNet(nn.Module):
-    def __init__(self, num_res_blocks=4):
+    """
+    Scaled-up AlphaZero Architecture for Ultimate Tic-Tac-Toe.
+    
+    Specs:
+      - Input:  [B, 6, 9, 9] tensor representation
+      - Backbone: 128 Filters, 6 Residual Blocks
+      - Policy Head: Outputs raw logits for 81 actions
+      - Value Head:  Outputs scalar outcome evaluation in [-1, 1]
+    """
+    def __init__(self, num_res_blocks=6, num_channels=128):
         super().__init__()
         
-        # Input stem: [B, 6, 9, 9] -> [B, 64, 9, 9]
+        # Stem: [B, 6, 9, 9] -> [B, 128, 9, 9]
         self.stem = nn.Sequential(
-            nn.Conv2d(6, 64, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(6, num_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(num_channels),
             nn.ReLU()
         )
         
-        # Tower
-        self.res_blocks = nn.ModuleList([ResBlock(64) for _ in range(num_res_blocks)])
+        # Deep Residual Tower (6 Blocks)
+        self.res_blocks = nn.ModuleList([ResBlock(num_channels) for _ in range(num_res_blocks)])
         
-        # Policy Head: raw logits for 81 actions
+        # Policy Head
         self.policy_head = nn.Sequential(
-            nn.Conv2d(64, 2, kernel_size=1, bias=False),
-            nn.BatchNorm2d(2),
+            nn.Conv2d(num_channels, 32, kernel_size=1, bias=False),
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(2 * 81, 81)
+            nn.Linear(32 * 9 * 9, 81)
         )
         
-        # Value Head: scalar outcome prediction in [-1, 1]
+        # Value Head
         self.value_head = nn.Sequential(
-            nn.Conv2d(64, 1, kernel_size=1, bias=False),
+            nn.Conv2d(num_channels, 1, kernel_size=1, bias=False),
             nn.BatchNorm2d(1),
             nn.ReLU(),
             nn.Flatten(),
@@ -69,7 +81,7 @@ class ZeroCrossNet(nn.Module):
         """Used during self-play inference. Handles flat, unbatched arrays safely."""
         self.eval() 
         
-        # 1. Convert to tensors
+        # 1. Convert to tensors if passed as lists/numpy arrays
         if not isinstance(state, torch.Tensor):
             state = torch.tensor(state, dtype=torch.float32)
         if not isinstance(legal_mask, torch.Tensor):
@@ -92,17 +104,17 @@ class ZeroCrossNet(nn.Module):
         # Forward pass
         logits, value = self.forward(state)
         
-        # Apply legal mask 
+        # Apply legal mask (-1e9 prevents illegal actions from receiving probability)
         masked_logits = logits.masked_fill(~legal_mask, -1e9)
         probabilities = F.softmax(masked_logits, dim=-1)
         
-        # 3. Pybind11 Safety: Convert back to native Python list and float
+        # 3. Convert back to native Python list and float for C++ pybind11 safety
         prob_list = probabilities.cpu().flatten().tolist()
         val_scalar = value.cpu().item()
         
         return prob_list, val_scalar
 
     def load_checkpoint(self, path):
-        """Utility for loading weights."""
+        """Utility for loading saved model weights."""
         self.load_state_dict(torch.load(path, map_location=next(self.parameters()).device))
         self.eval()
