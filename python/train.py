@@ -32,8 +32,8 @@ class ZeroCrossDataset(Dataset):
         
         return state_tensor, legal_mask, policy_tensor, reward_tensor
 
-# 2. The Custom AlphaZero Loss Function
-def alphazero_loss(pred_logits, pred_values, target_policies, target_rewards, legal_masks):
+# 2. The Custom AlphaZero Loss Function (Upgraded with Entropy)
+def alphazero_loss_and_metrics(pred_logits, pred_values, target_policies, target_rewards, legal_masks):
     # A. Value Loss (Mean Squared Error)
     value_loss = F.mse_loss(pred_values, target_rewards)
     
@@ -45,21 +45,34 @@ def alphazero_loss(pred_logits, pred_values, target_policies, target_rewards, le
     # Cross entropy: sum of (target_prob * log_pred_prob)
     policy_loss = -(target_policies * log_preds).sum(dim=1).mean()
     
-    # Total Loss (L2 weight decay is handled automatically by the Adam optimizer)
-    return value_loss + policy_loss, value_loss.item(), policy_loss.item()
+    # C. Entropy (Creativity/Diversity of the network's predictions)
+    probs = F.softmax(masked_logits, dim=1)
+    entropy = -torch.sum(probs * log_preds, dim=1).mean()
+    
+    return value_loss + policy_loss, value_loss.item(), policy_loss.item(), entropy.item()
 
-# 3. The Training Loop
-def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, device='cpu'):
+# 3. The Training Loop (Upgraded for Checkpoint Persistence)
+def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, device='cpu', optimizer_state=None):
     dataset = ZeroCrossDataset(dataset_tuples)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
     # Adam optimizer with Weight Decay (L2 Regularization)
     optimizer = optim.Adam(net.parameters(), lr=lr, weight_decay=1e-4)
+    
+    # Reload optimizer momentum for long Kaggle campaigns
+    if optimizer_state is not None:
+        optimizer.load_state_dict(optimizer_state)
+        # Force the dynamically scheduled LR, overriding the old saved one
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
+            
     net.to(device)
+    
+    total_pi_loss, total_v_loss, total_entropy = 0.0, 0.0, 0.0
+    batch_count = 0
     
     for epoch in range(epochs):
         net.train() # Unlock BatchNorm layers
-        total_loss, total_v_loss, total_p_loss = 0, 0, 0
         
         for states, masks, target_policies, target_rewards in dataloader:
             states, masks = states.to(device), masks.to(device)
@@ -67,53 +80,60 @@ def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, devic
             
             optimizer.zero_grad()
             
-            # Forward pass (getting raw logits)
+            # Forward pass
             logits, values = net(states)
             
-            # Calculate Custom Loss
-            loss, v_loss, p_loss = alphazero_loss(logits, values, target_policies, target_rewards, masks)
+            # Calculate Loss & Metrics
+            loss, v_loss, p_loss, entropy = alphazero_loss_and_metrics(logits, values, target_policies, target_rewards, masks)
             
             # Backpropagation
             loss.backward()
             optimizer.step()
             
-            total_loss += loss.item()
             total_v_loss += v_loss
-            total_p_loss += p_loss
-            
-        print(f"Epoch {epoch+1}/{epochs} | "
-              f"Total Loss: {total_loss/len(dataloader):.4f} | "
-              f"Policy Loss: {total_p_loss/len(dataloader):.4f} | "
-              f"Value Loss: {total_v_loss/len(dataloader):.4f}")
-              
-    return net
+            total_pi_loss += p_loss
+            total_entropy += entropy
+            batch_count += 1
+
+    # Finalize Averages for logging
+    avg_pi_loss = total_pi_loss / max(1, batch_count)
+    avg_v_loss = total_v_loss / max(1, batch_count)
+    avg_entropy = total_entropy / max(1, batch_count)
+    
+    metrics = {
+        "pi_loss": round(avg_pi_loss, 4),
+        "v_loss": round(avg_v_loss, 4),
+        "entropy": round(avg_entropy, 4)
+    }
+    
+    return net, optimizer.state_dict(), metrics
 
 if __name__ == "__main__":
     import os
     from self_play import SelfPlayWorker
     
-    # Safe hardware device selection (avoids CC 5.0 GPU architecture mismatch)
     if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7:
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
-        print("Notice: Using CPU because local GPU is below Compute Capability 7.0")
         
     print(f"Initializing on {device}...")
     
-    # 1. Initialize Network
     net = ZeroCrossNet()
     
-    # 2. Generate Dummy Data via Self-Play
     print("Generating 2 games of self-play data for pipeline verification...")
     worker = SelfPlayWorker(net, num_concurrent_games=2, mcts_simulations=25)
     training_data = worker.generate_data(total_games_to_play=2)
     
-    # 3. Train the Network
     print(f"Training on {len(training_data)} augmented samples...")
-    trained_net = train_network(net, training_data, batch_size=32, epochs=5, lr=0.001, device=device)
+    trained_net, opt_state, metrics = train_network(net, training_data, batch_size=32, epochs=5, lr=0.001, device=device)
     
-    # 4. Save Checkpoint
     os.makedirs("models", exist_ok=True)
-    torch.save(trained_net.state_dict(), "models/latest_checkpoint.pth")
-    print("Pipeline Verified! Checkpoint saved to models/latest_checkpoint.pth")
+    # Testing the new dual-save format
+    torch.save({
+        'model_state_dict': trained_net.state_dict(),
+        'optimizer_state_dict': opt_state
+    }, "models/latest_checkpoint.pth")
+    
+    print(f"Pipeline Verified! Metrics extracted: {metrics}")
+    print("Checkpoint with optimizer state saved to models/latest_checkpoint.pth")
