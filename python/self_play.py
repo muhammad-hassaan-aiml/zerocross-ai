@@ -108,7 +108,7 @@ if __name__ == "__main__":
     net = ZeroCrossNet()
     net.eval()
     
-    device = torch.device("cuda" if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7 else "cpu")
+    device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
     net.to(device)
     
     print(f"Starting Batched Self-Play on {device}...")

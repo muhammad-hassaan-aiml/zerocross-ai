@@ -113,11 +113,8 @@ def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, devic
 if __name__ == "__main__":
     from self_play import SelfPlayWorker
     
-    if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7:
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
-        
+    device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
+            
     print(f"Initializing on {device}")
     
     net = ZeroCrossNet()

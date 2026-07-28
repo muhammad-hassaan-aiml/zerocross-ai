@@ -121,7 +121,7 @@ class Evaluator:
         return promoted, cand_vs_rand_wr, cand_vs_champ_wr, cand_vs_champ_elo
 
 if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7 else "cpu")
+    device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
     print(f"Testing Evaluator Harness on {device}")
     
     cand = ZeroCrossNet()

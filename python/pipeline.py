@@ -25,11 +25,8 @@ def estimate_buffer_memory_mb(buffer):
     return (bytes_per_sample * len(buffer)) / (1024 ** 2)
 
 def run_pipeline(iterations=100, max_buffer_size=500000):
-    if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7:
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
-        
+    device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
+            
     print(f"Starting ZeroCross Training Pipeline on {device}")
     
     if os.path.exists("/kaggle/working"):

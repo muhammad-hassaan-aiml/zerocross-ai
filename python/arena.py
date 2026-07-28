@@ -125,7 +125,7 @@ class Arena:
 
 if __name__ == "__main__":
     # Smart device selection
-    device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7) else "cpu")
+    device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
     print(f"Initializing Arena on {device}...")
     
     cand = ZeroCrossNet()

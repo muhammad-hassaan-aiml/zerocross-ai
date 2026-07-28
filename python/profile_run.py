@@ -6,7 +6,7 @@ from self_play import SelfPlayWorker
 
 def run_profiling():
     # Setup device
-    device = torch.device("cuda" if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7 else "cpu")
+    device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
     print("ZERO-CROSS PROFILING RUN")
     print(f"Device: {device}")
     
