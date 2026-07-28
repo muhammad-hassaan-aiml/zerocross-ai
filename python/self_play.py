@@ -49,8 +49,13 @@ class SelfPlayWorker:
                 c2 = batch_states[:, 2].flatten(start_dim=1).bool()
                 batch_masks = c2 & ~c0 & ~c1
                 
-                with torch.no_grad(), torch.autocast(device_type="cuda" if self.is_cuda else "cpu", enabled=self.is_cuda):
-                    logits, values = self.net(batch_states)
+                with torch.no_grad():
+                    if self.is_cuda:
+                        with torch.autocast('cuda'):
+                            logits, values = self.net(batch_states)
+                    else:
+                        logits, values = self.net(batch_states)
+                        
                     masked_logits = logits.masked_fill(~batch_masks, -1e9)
                     
                     policies_cpu = masked_logits.cpu().numpy()

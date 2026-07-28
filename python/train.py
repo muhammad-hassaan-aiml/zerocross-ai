@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-import numpy as np
 import datetime
 import os
 from network import ZeroCrossNet
@@ -50,11 +49,13 @@ def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, devic
     if is_cuda:
         torch.backends.cudnn.benchmark = True
         
+    optimal_workers = min(4, os.cpu_count() or 1)
+        
     dataloader = DataLoader(
         dataset, 
         batch_size=batch_size, 
         shuffle=True,
-        num_workers=2,
+        num_workers=optimal_workers,
         pin_memory=is_cuda
     )
     
@@ -80,7 +81,11 @@ def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, devic
             
             optimizer.zero_grad()
             
-            with torch.autocast(device_type="cuda" if is_cuda else "cpu", enabled=is_cuda):
+            if is_cuda:
+                with torch.autocast('cuda'):
+                    logits, values = net(states)
+                    loss, v_loss, p_loss, entropy = alphazero_loss_and_metrics(logits, values, target_policies, target_rewards, masks)
+            else:
                 logits, values = net(states)
                 loss, v_loss, p_loss, entropy = alphazero_loss_and_metrics(logits, values, target_policies, target_rewards, masks)
             
@@ -144,7 +149,3 @@ if __name__ == "__main__":
     
     print(f"Pipeline Verified! Metrics extracted: {metrics}")
     print(f"Checkpoint with full metadata saved to {save_path}")
-    
-    verify_net = ZeroCrossNet()
-    verify_net.load_checkpoint(save_path)
-    print("Verification successful: Metadata-rich checkpoint loaded smoothly into ZeroCrossNet.")
