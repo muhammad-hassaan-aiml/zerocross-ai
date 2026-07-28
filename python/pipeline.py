@@ -24,7 +24,8 @@ def estimate_buffer_memory_mb(buffer):
     bytes_per_sample = state_size + policy_size + reward_size + tuple_size
     return (bytes_per_sample * len(buffer)) / (1024 ** 2)
 
-def run_pipeline(iterations=100, max_buffer_size=500000, do_generate=True, do_train=True, do_evaluate=True):
+def run_pipeline(iterations=100, max_buffer_size=500000, do_generate=True, do_train=True, do_evaluate=True,
+                 concurrent_games=10, mcts_sims=50, eval_games=2, eval_sims=20):
     device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
             
     print(f"Starting ZeroCross Training Pipeline on {device}")
@@ -100,8 +101,8 @@ def run_pipeline(iterations=100, max_buffer_size=500000, do_generate=True, do_tr
         if do_generate:
             print("\n[1/4] Generating Batched Self Play Data")
             gen_start = time.time()
-            worker = SelfPlayWorker(best_net, num_concurrent_games=10, mcts_simulations=50, temperature_moves=30)
-            new_samples = worker.generate_data(total_games_to_play=2)
+            worker = SelfPlayWorker(best_net, num_concurrent_games=concurrent_games, mcts_simulations=mcts_sims, temperature_moves=30)
+            new_samples = worker.generate_data(total_games_to_play=concurrent_games)
             gen_duration = time.time() - gen_start
             aug_duration = worker.total_augmentation_time
             avg_batch_size = worker.avg_batch_size
@@ -151,14 +152,14 @@ def run_pipeline(iterations=100, max_buffer_size=500000, do_generate=True, do_tr
                 train_duration = time.time() - train_start
         
         if do_evaluate:
-            print("\n[3/4] Comprehensive Evaluation")
+            print(f"\n[3/4] Comprehensive Evaluation ({eval_games} games/match)")
             eval_start = time.time()
             evaluator = Evaluator(device=device)
             promoted, rand_wr, champ_wr, elo_diff = evaluator.run_full_evaluation(
                 candidate_net=candidate_net,
                 champion_net=best_net,
-                sims=20,
-                games_per_match=2
+                sims=eval_sims,
+                games_per_match=eval_games
             )
             eval_duration = time.time() - eval_start
         
@@ -169,19 +170,26 @@ def run_pipeline(iterations=100, max_buffer_size=500000, do_generate=True, do_tr
                 print("Evaluation skipped. Force promoting candidate.")
                 
             if promoted:
-                print(f"UPGRADE Candidate promoted Saving to {model_path}")
+                print(f"UPGRADE Candidate promoted! Saving to {model_path}")
                 best_net.load_state_dict(candidate_net.state_dict())
                 optimizer_state = opt_state
                 
-                torch.save({
+                checkpoint_data = {
                     'iteration': current_iter,
                     'model_state_dict': best_net.state_dict(),
                     'optimizer_state_dict': optimizer_state,
                     'learning_rate': current_lr,
                     'timestamp': time.time()
-                }, model_path)
+                }
+                
+                torch.save(checkpoint_data, model_path)
+                
+                history_path = os.path.join(drive_dir, f"champion_gen_{current_iter}.pth")
+                torch.save(checkpoint_data, history_path)
+                print(f"Historical champion archived to {history_path}")
+                
             else:
-                print("REJECTED Candidate failed to hit 55 percent Keeping old champion")
+                print("REJECTED Candidate failed to hit 55 percent. Keeping old champion.")
         
         with open(csv_path, mode='a', newline='') as f:
             writer = csv.writer(f)
@@ -217,6 +225,11 @@ if __name__ == "__main__":
     parser.add_argument("--train-only", action="store_true", help="Only train the network on existing buffer and force promote")
     parser.add_argument("--evaluate-only", action="store_true", help="Only evaluate the current best model")
     
+    parser.add_argument("--concurrent-games", type=int, default=10, help="Parallel games for self-play")
+    parser.add_argument("--mcts-sims", type=int, default=50, help="MCTS simulations per move during self-play")
+    parser.add_argument("--eval-games", type=int, default=2, help="Games per matchup in evaluation (e.g. 40 on Kaggle)")
+    parser.add_argument("--eval-sims", type=int, default=20, help="MCTS simulations per move during evaluation")
+    
     args = parser.parse_args()
     
     do_generate = True
@@ -237,5 +250,9 @@ if __name__ == "__main__":
         iterations=args.iterations,
         do_generate=do_generate,
         do_train=do_train,
-        do_evaluate=do_evaluate
+        do_evaluate=do_evaluate,
+        concurrent_games=args.concurrent_games,
+        mcts_sims=args.mcts_sims,
+        eval_games=args.eval_games,
+        eval_sims=args.eval_sims
     )
