@@ -23,7 +23,7 @@ class ZeroCrossDataset(Dataset):
         # CORRECTED: True legal mask requires the cell to be in an active grid AND empty
         c0 = state_tensor[0].flatten().bool() # Current player pieces
         c1 = state_tensor[1].flatten().bool() # Opponent pieces
-        c2 = state_tensor[2].flatten().bool() # Active macro-grids
+        c2 = state_tensor[2].flatten().bool() # Active macro grids
         
         legal_mask = c2 & ~c0 & ~c1
         
@@ -32,37 +32,37 @@ class ZeroCrossDataset(Dataset):
         
         return state_tensor, legal_mask, policy_tensor, reward_tensor
 
-# 2. The Custom AlphaZero Loss Function (Upgraded with Entropy)
+# 2. The Custom AlphaZero Loss Function Upgraded with Entropy
 def alphazero_loss_and_metrics(pred_logits, pred_values, target_policies, target_rewards, legal_masks):
-    # A. Value Loss (Mean Squared Error)
+    # A. Value Loss Mean Squared Error
     value_loss = F.mse_loss(pred_values, target_rewards)
     
-    # B. Policy Loss (Cross Entropy with Soft Targets)
+    # B. Policy Loss Cross Entropy with Soft Targets
     # Mask illegal moves with -1e9 before taking log_softmax to prevent NaNs
     masked_logits = pred_logits.masked_fill(~legal_masks, -1e9)
     log_preds = F.log_softmax(masked_logits, dim=1)
     
-    # Cross entropy: sum of (target_prob * log_pred_prob)
+    # Cross entropy: sum of target_prob * log_pred_prob
     policy_loss = -(target_policies * log_preds).sum(dim=1).mean()
     
-    # C. Entropy (Creativity/Diversity of the network's predictions)
+    # C. Entropy Creativity and Diversity of the network predictions
     probs = F.softmax(masked_logits, dim=1)
     entropy = -torch.sum(probs * log_preds, dim=1).mean()
     
     return value_loss + policy_loss, value_loss.item(), policy_loss.item(), entropy.item()
 
-# 3. The Training Loop (Upgraded for Checkpoint Persistence)
+# 3. The Training Loop Upgraded for Checkpoint Persistence
 def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, device='cpu', optimizer_state=None):
     dataset = ZeroCrossDataset(dataset_tuples)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
-    # Adam optimizer with Weight Decay (L2 Regularization)
+    # Adam optimizer with Weight Decay L2 Regularization
     optimizer = optim.Adam(net.parameters(), lr=lr, weight_decay=1e-4)
     
     # Reload optimizer momentum for long Kaggle campaigns
     if optimizer_state is not None:
         optimizer.load_state_dict(optimizer_state)
-        # Force the dynamically scheduled LR, overriding the old saved one
+        # Force the dynamically scheduled LR overriding the old saved one
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
             
@@ -83,7 +83,7 @@ def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, devic
             # Forward pass
             logits, values = net(states)
             
-            # Calculate Loss & Metrics
+            # Calculate Loss and Metrics
             loss, v_loss, p_loss, entropy = alphazero_loss_and_metrics(logits, values, target_policies, target_rewards, masks)
             
             # Backpropagation
@@ -117,23 +117,23 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
         
-    print(f"Initializing on {device}...")
+    print(f"Initializing on {device}")
     
     net = ZeroCrossNet()
     
-    print("Generating 2 games of self-play data for pipeline verification...")
+    print("Generating 2 games of self play data for pipeline verification")
     worker = SelfPlayWorker(net, num_concurrent_games=2, mcts_simulations=25)
     training_data = worker.generate_data(total_games_to_play=2)
     
-    print(f"Training on {len(training_data)} augmented samples...")
+    print(f"Training on {len(training_data)} augmented samples")
     trained_net, opt_state, metrics = train_network(net, training_data, batch_size=32, epochs=5, lr=0.001, device=device)
     
     os.makedirs("models", exist_ok=True)
-    # Testing the new dual-save format
+    # Testing the new dual save format
     torch.save({
         'model_state_dict': trained_net.state_dict(),
         'optimizer_state_dict': opt_state
     }, "models/latest_checkpoint.pth")
     
-    print(f"Pipeline Verified! Metrics extracted: {metrics}")
+    print(f"Pipeline Verified Metrics extracted: {metrics}")
     print("Checkpoint with optimizer state saved to models/latest_checkpoint.pth")
