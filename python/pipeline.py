@@ -34,7 +34,7 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
     
     best_net.to(device)
     
-    # Sliding Window Replay Buffer for Kaggle (500k max samples)
+    # Sliding Window Replay Buffer
     replay_buffer = deque(maxlen=max_buffer_size)
     
     for i in range(iterations):
@@ -42,17 +42,26 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
         print(f" ALPHAZERO ITERATION {i+1} / {iterations}")
         print(f"{'='*50}")
         
+        # --- DYNAMIC LEARNING RATE SCHEDULE ---
+        if i < 20:
+            current_lr = 0.001      # Fast initial learning
+        elif i < 50:
+            current_lr = 0.0001     # Fine-tuning deep tactics
+        else:
+            current_lr = 0.00001    # Micro-optimizations for endgame play
+            
+        print(f"Current Learning Rate: {current_lr}")
+        
         # 1. Generate Data (Self-Play)
         print("\n[1/4] Generating Batched Self-Play Data...")
         worker = SelfPlayWorker(best_net, num_concurrent_games=200, mcts_simulations=400)
         new_samples = worker.generate_data(total_games_to_play=100) 
         
-        # Add new games to the replay buffer
         replay_buffer.extend(new_samples)
         print(f"Replay Buffer Capacity: {len(replay_buffer)} / {max_buffer_size} samples")
         
         # 2. Train Candidate on Replay Buffer
-        print(f"\n[2/4] Training Candidate Network on Replay Buffer...")
+        print(f"\n[2/4] Training Candidate Network...")
         candidate_net = ZeroCrossNet().to(device)
         candidate_net.load_state_dict(best_net.state_dict())
         
@@ -61,7 +70,7 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
             list(replay_buffer), 
             batch_size=256, 
             epochs=5, 
-            lr=0.001, 
+            lr=current_lr,          # Applying the dynamic LR here
             device=device
         )
         
