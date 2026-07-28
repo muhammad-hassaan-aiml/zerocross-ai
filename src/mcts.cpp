@@ -33,8 +33,10 @@ std::vector<float> MCTSTree::generate_dirichlet(int num_valid_actions) {
 }
 
 float MCTSTree::calculate_puct(std::shared_ptr<MCTSNode> parent, std::shared_ptr<MCTSNode> child) const {
-    // Q is the average value of the child node. If unvisited, it defaults to 0.
-    float q_value = (child->visit_count > 0) ? (child->total_value / child->visit_count) : 0.0f;
+    // Q is the average value of the child node. 
+    // CRITICAL: We must INVERT the child's value. The child's value is stored from the 
+    // opponent's perspective. Maximizing the opponent's loss means maximizing -Q.
+    float q_value = (child->visit_count > 0) ? -(child->total_value / child->visit_count) : 0.0f;
     
     // DeepMind's Dynamic Exploration Constant (replaces static C_PUCT)
     float c_puct = 1.25f + std::log((parent->visit_count + 19652.0f + 1.0f) / 19652.0f);
