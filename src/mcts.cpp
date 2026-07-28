@@ -70,16 +70,18 @@ std::optional<std::array<float, 486>> MCTSTree::request_leaf() {
 
     // Handle terminal states instantly without neural network evaluation
     if (current->state.is_terminal()) {
-        // In a zero-sum game, if a state is terminal, the player whose turn it is has already lost or drawn.
         // We backpropagate the exact game outcome.
-        float terminal_value = 0.0f; 
+        int winner = current->state.get_winner();
+        int current_player = current->state.get_current_player();
         
-        // Use a dummy game state to check the macro board win condition cleanly
-        GameState dummy; 
+        float terminal_value = 0.0f; 
+        // 0 represents a draw. If there's a winner, assign 1.0 or -1.0 based on perspective.
+        if (winner != 0) { 
+            terminal_value = (winner == current_player) ? 1.0f : -1.0f;
+        }
         
         // Turn parity inversion backpropagation
         std::shared_ptr<MCTSNode> backprop_node = current;
-        int current_player = current->state.get_current_player();
         
         while (backprop_node != nullptr) {
             backprop_node->visit_count++;
@@ -87,7 +89,7 @@ std::optional<std::array<float, 486>> MCTSTree::request_leaf() {
             // If the backprop node's turn matches the player who faces the terminal value, add it.
             // Otherwise, subtract it (zero-sum perspective).
             if (backprop_node->state.get_current_player() == current_player) {
-                backprop_node->total_value += terminal_value; // Draws remain 0
+                backprop_node->total_value += terminal_value; 
             } else {
                 backprop_node->total_value -= terminal_value; 
             }
