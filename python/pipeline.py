@@ -58,9 +58,8 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
             best_net.load_state_dict(checkpoint['model_state_dict'])
             optimizer_state = checkpoint.get('optimizer_state_dict', None)
             
-            if os.path.exists(csv_path):
-                with open(csv_path, 'r') as f:
-                    start_iteration = sum(1 for row in f) - 1
+            # Extract iteration directly from checkpoint as the single source of truth
+            start_iteration = checkpoint.get('iteration', 0)
         else:
             best_net.load_state_dict(checkpoint)
             
