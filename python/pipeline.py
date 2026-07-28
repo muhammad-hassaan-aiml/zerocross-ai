@@ -1,12 +1,28 @@
 import os
 import csv
 import time
+import sys
 import torch
 from collections import deque
 from network import ZeroCrossNet
 from self_play import SelfPlayWorker
 from train import train_network
 from evaluate import Evaluator
+
+def estimate_buffer_memory_mb(buffer):
+    """Calculates the exact byte footprint of the Python replay buffer and converts to MB."""
+    if not buffer:
+        return 0.0
+    
+    sample = buffer[0]
+    # Calculate bytes for state list, policy list, and reward float, including pointers
+    state_size = sys.getsizeof(sample[0]) + sum(sys.getsizeof(x) for x in sample[0])
+    policy_size = sys.getsizeof(sample[1]) + sum(sys.getsizeof(x) for x in sample[1])
+    reward_size = sys.getsizeof(sample[2])
+    tuple_size = sys.getsizeof(sample)
+    
+    bytes_per_sample = state_size + policy_size + reward_size + tuple_size
+    return (bytes_per_sample * len(buffer)) / (1024 ** 2)
 
 def run_pipeline(iterations=100, max_buffer_size=500000):
     if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7:
@@ -66,6 +82,7 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
         print(f"Restored {len(replay_buffer)} historical samples to memory")
         
     for i in range(start_iteration, start_iteration + iterations):
+        iter_start_time = time.time()
         current_iter = i + 1
         print(f"\nALPHAZERO ITERATION {current_iter} of {start_iteration + iterations}")
         
@@ -79,13 +96,17 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
         print(f"Current Learning Rate: {current_lr}")
         
         print("\n[1/4] Generating Batched Self Play Data")
+        gen_start = time.time()
         worker = SelfPlayWorker(best_net, num_concurrent_games=10, mcts_simulations=50)
         new_samples = worker.generate_data(total_games_to_play=2) 
+        gen_duration = time.time() - gen_start
         
         replay_buffer.extend(new_samples)
-        print(f"Replay Buffer Capacity: {len(replay_buffer)} of {max_buffer_size} samples")
+        buffer_mb = estimate_buffer_memory_mb(replay_buffer)
+        print(f"Replay Buffer Capacity: {len(replay_buffer)} of {max_buffer_size} samples (Approx {buffer_mb:.2f} MB RAM)")
         
         print("\n[2/4] Training Candidate Network")
+        train_start = time.time()
         candidate_net = ZeroCrossNet().to(device)
         candidate_net.load_state_dict(best_net.state_dict())
         
@@ -98,8 +119,10 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
             device=device,
             optimizer_state=optimizer_state
         )
+        train_duration = time.time() - train_start
         
         print("\n[3/4] Comprehensive Evaluation")
+        eval_start = time.time()
         evaluator = Evaluator(device=device)
         promoted, rand_wr, champ_wr, elo_diff = evaluator.run_full_evaluation(
             candidate_net=candidate_net,
@@ -107,6 +130,7 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
             sims=20,
             games_per_match=2
         )
+        eval_duration = time.time() - eval_start
         
         print("\n[4/4] Model Gating")
         if promoted:
@@ -151,6 +175,15 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
         archive_path = os.path.join(drive_dir, f"replay_buffer_iter_{current_iter}.pt")
         torch.save(buffer_data, archive_path)
         print(f"Archived chunk saved to {archive_path}")
+        
+        total_iter_duration = time.time() - iter_start_time
+        
+        print("\nITERATION BENCHMARK REPORT")
+        print(f"Average MCTS Batch Size: {worker.avg_batch_size:.2f}")
+        print(f"Data Generation Time:    {gen_duration:.2f} sec")
+        print(f"Network Training Time:   {train_duration:.2f} sec")
+        print(f"Evaluation Time:         {eval_duration:.2f} sec")
+        print(f"Total Iteration Time:    {total_iter_duration:.2f} sec")
 
 if __name__ == "__main__":
     run_pipeline(iterations=1)

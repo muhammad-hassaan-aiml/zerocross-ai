@@ -15,11 +15,13 @@ class SelfPlayWorker:
         
         self.game_histories = [[] for _ in range(self.num_games)]
         self.completed_games_data = []
+        self.batch_sizes = []
         
         self.device = next(self.net.parameters()).device
 
     def generate_data(self, total_games_to_play):
         games_completed = 0
+        self.batch_sizes = []
         
         while games_completed < total_games_to_play:
             leaf_states, active_indices = [], []
@@ -34,9 +36,10 @@ class SelfPlayWorker:
             
             # 2. Batched Neural Network Inference on GPU/CPU
             if len(leaf_states) > 0:
+                self.batch_sizes.append(len(leaf_states))
                 batch_states = torch.tensor(np.array(leaf_states), dtype=torch.float32).view(-1, 6, 9, 9).to(self.device)
                 
-                # FIX: Dynamically calculate legal masks from the leaf states, NOT the root states!
+                # Dynamically calculate legal masks from the leaf states, NOT the root states!
                 c0 = batch_states[:, 0].flatten(start_dim=1).bool()
                 c1 = batch_states[:, 1].flatten(start_dim=1).bool()
                 c2 = batch_states[:, 2].flatten(start_dim=1).bool()
@@ -85,6 +88,7 @@ class SelfPlayWorker:
                         self.states[i] = zerocross_engine.GameState()
                         self.trees[i] = zerocross_engine.MCTSTree(self.states[i], True)
                         
+        self.avg_batch_size = sum(self.batch_sizes) / len(self.batch_sizes) if self.batch_sizes else 0
         return self.completed_games_data
 
     def _process_completed_game(self, game_idx):
@@ -111,3 +115,4 @@ if __name__ == "__main__":
     worker = SelfPlayWorker(net, num_concurrent_games=10, mcts_simulations=50)
     dataset = worker.generate_data(total_games_to_play=2)
     print(f"Successfully generated {len(dataset)} training samples from 2 games!")
+    print(f"Average MCTS Batch Size: {worker.avg_batch_size:.2f}")
