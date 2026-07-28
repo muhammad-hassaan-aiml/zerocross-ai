@@ -56,7 +56,16 @@ def alphazero_loss_and_metrics(pred_logits, pred_values, target_policies, target
 # 3. The Training Loop Upgraded for Checkpoint Persistence
 def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, device='cpu', optimizer_state=None):
     dataset = ZeroCrossDataset(dataset_tuples)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    
+    # Optimize data loading throughput for Kaggle GPUs
+    use_pin_memory = "cuda" in str(device)
+    dataloader = DataLoader(
+        dataset, 
+        batch_size=batch_size, 
+        shuffle=True,
+        num_workers=2,         # Overlap data prep with GPU execution
+        pin_memory=use_pin_memory # Faster host-to-device transfers
+    )
     
     # Adam optimizer with Weight Decay L2 Regularization
     optimizer = optim.Adam(net.parameters(), lr=lr, weight_decay=1e-4)
