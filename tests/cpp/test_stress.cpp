@@ -1,6 +1,7 @@
 #include "game_state.h"
 #include <iostream>
 #include <vector>
+#include <array>
 #include <random>
 #include <chrono>
 
@@ -16,7 +17,8 @@ int main() {
         GameState state;
         
         while (!state.is_terminal()) {
-            std::vector<bool> mask = state.legal_mask();
+            // Correctly use std::array to match your optimized C++ engine
+            std::array<bool, 81> mask = state.legal_mask();
             std::vector<int> legal_moves;
             
             for (int m = 0; m < 81; ++m) {
