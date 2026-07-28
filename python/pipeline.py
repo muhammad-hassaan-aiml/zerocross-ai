@@ -27,6 +27,7 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
     os.makedirs(drive_dir, exist_ok=True)
     model_path = os.path.join(drive_dir, "best_model.pth")
     csv_path = os.path.join(drive_dir, "training_log.csv")
+    buffer_path = os.path.join(drive_dir, "replay_buffer.pt")  # <--- NEW: Buffer path
     
     # Initialize CSV if it doesn't exist
     if not os.path.exists(csv_path):
@@ -59,6 +60,13 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
     
     # Sliding Window Replay Buffer
     replay_buffer = deque(maxlen=max_buffer_size)
+    
+    # --- NEW: Load historical buffer if resuming campaign ---
+    if os.path.exists(buffer_path):
+        print(f"Loading historical replay buffer from {buffer_path}...")
+        loaded_buffer = torch.load(buffer_path)
+        replay_buffer.extend(loaded_buffer)
+        print(f"Restored {len(replay_buffer)} historical samples to memory.")
     
     for i in range(start_iteration, start_iteration + iterations):
         current_iter = i + 1
@@ -134,6 +142,10 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
                 promoted
             ])
         print(f"Metrics successfully appended to {csv_path}")
+        
+        # --- NEW: Save the Replay Buffer to disk at the end of the iteration ---
+        print(f"Syncing replay buffer ({len(replay_buffer)} samples) to disk to prevent data loss...")
+        torch.save(list(replay_buffer), buffer_path)
 
 if __name__ == "__main__":
     run_pipeline(iterations=100)
