@@ -3,6 +3,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
+import datetime
+import os
 from network import ZeroCrossNet
 
 # 1. Dataset Wrapper with Corrected Legal Masking
@@ -109,7 +111,6 @@ def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, devic
     return net, optimizer.state_dict(), metrics
 
 if __name__ == "__main__":
-    import os
     from self_play import SelfPlayWorker
     
     if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7:
@@ -121,19 +122,36 @@ if __name__ == "__main__":
     
     net = ZeroCrossNet()
     
-    print("Generating 2 games of self play data for pipeline verification")
+    # Pipeline configuration variables
+    GAMES_TO_PLAY = 2
+    CURRENT_GENERATION = 1
+    
+    print(f"Generating {GAMES_TO_PLAY} games of self play data for pipeline verification")
     worker = SelfPlayWorker(net, num_concurrent_games=2, mcts_simulations=25)
-    training_data = worker.generate_data(total_games_to_play=2)
+    training_data = worker.generate_data(total_games_to_play=GAMES_TO_PLAY)
     
     print(f"Training on {len(training_data)} augmented samples")
     trained_net, opt_state, metrics = train_network(net, training_data, batch_size=32, epochs=5, lr=0.001, device=device)
     
     os.makedirs("models", exist_ok=True)
-    # Testing the new dual save format
-    torch.save({
+    
+    # Rich metadata dictionary payload
+    checkpoint_data = {
+        'generation': CURRENT_GENERATION,
+        'games_played': GAMES_TO_PLAY,
+        'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'metrics': metrics,
         'model_state_dict': trained_net.state_dict(),
         'optimizer_state_dict': opt_state
-    }, "models/latest_checkpoint.pth")
+    }
     
-    print(f"Pipeline Verified Metrics extracted: {metrics}")
-    print("Checkpoint with optimizer state saved to models/latest_checkpoint.pth")
+    save_path = "models/latest_checkpoint.pth"
+    torch.save(checkpoint_data, save_path)
+    
+    print(f"Pipeline Verified! Metrics extracted: {metrics}")
+    print(f"Checkpoint with full metadata saved to {save_path}")
+    
+    # Verify reload logic works
+    verify_net = ZeroCrossNet()
+    verify_net.load_checkpoint(save_path)
+    print("Verification successful: Metadata-rich checkpoint loaded smoothly into ZeroCrossNet.")

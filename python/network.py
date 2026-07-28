@@ -115,6 +115,14 @@ class ZeroCrossNet(nn.Module):
         return prob_list, val_scalar
 
     def load_checkpoint(self, path):
-        """Utility for loading saved model weights."""
-        self.load_state_dict(torch.load(path, map_location=next(self.parameters()).device))
+        """Utility for loading saved model weights, supporting metadata-rich dictionaries."""
+        checkpoint = torch.load(path, map_location=next(self.parameters()).device, weights_only=False)
+        
+        # Extract state dict if it's packed with training metadata
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            self.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            # Fallback for legacy checkpoints containing only the raw state_dict
+            self.load_state_dict(checkpoint)
+            
         self.eval()
