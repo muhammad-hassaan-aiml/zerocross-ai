@@ -1,3 +1,4 @@
+import time
 import torch
 import numpy as np
 import zerocross_engine
@@ -17,7 +18,8 @@ class SelfPlayWorker:
         self.game_histories = [[] for _ in range(self.num_games)]
         self.completed_games_data = []
         self.batch_sizes = []
-        
+        self.total_augmentation_time = 0.0
+
         self.device = next(self.net.parameters()).device
 
     def generate_data(self, total_games_to_play):
@@ -95,6 +97,7 @@ class SelfPlayWorker:
     def _process_completed_game(self, game_idx):
         winner = self.states[game_idx].get_winner()
         
+        aug_start = time.time()
         for step in self.game_histories[game_idx]:
             reward = 1.0 if step['player'] == winner else (-1.0 if winner != 0 else 0.0)
             
@@ -102,6 +105,7 @@ class SelfPlayWorker:
             augmented_steps = get_symmetries(step['state'], step['policy'], reward)
             self.completed_games_data.extend(augmented_steps)
             
+        self.total_augmentation_time += (time.time() - aug_start)
         self.game_histories[game_idx] = []
 
 if __name__ == "__main__":

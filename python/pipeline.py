@@ -183,6 +183,7 @@ def run_pipeline(iterations=100, max_buffer_size=500000):
         print("\nITERATION BENCHMARK REPORT")
         print(f"Average MCTS Batch Size: {worker.avg_batch_size:.2f}")
         print(f"Data Generation Time:    {gen_duration:.2f} sec")
+        print(f"Augmentation Time:  {worker.total_augmentation_time:.2f} sec")
         print(f"Network Training Time:   {train_duration:.2f} sec")
         print(f"Evaluation Time:         {eval_duration:.2f} sec")
         print(f"Total Iteration Time:    {total_iter_duration:.2f} sec")
