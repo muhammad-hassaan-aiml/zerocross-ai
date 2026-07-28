@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 import numpy as np
 import zerocross_engine
 from network import ZeroCrossNet
@@ -23,7 +22,7 @@ class SelfPlayWorker:
         games_completed = 0
         
         while games_completed < total_games_to_play:
-            leaf_states, legal_masks, active_indices = [], [], []
+            leaf_states, active_indices = [], []
             
             # 1. Gather pending leaf requests from all active trees
             for i in range(self.num_games):
@@ -31,20 +30,24 @@ class SelfPlayWorker:
                     leaf = self.trees[i].request_leaf()
                     if leaf is not None:
                         leaf_states.append(leaf)
-                        legal_masks.append(self.states[i].legal_mask())
                         active_indices.append(i)
             
             # 2. Batched Neural Network Inference on GPU/CPU
             if len(leaf_states) > 0:
                 batch_states = torch.tensor(np.array(leaf_states), dtype=torch.float32).view(-1, 6, 9, 9).to(self.device)
-                batch_masks = torch.tensor(np.array(legal_masks), dtype=torch.bool).to(self.device)
+                
+                # FIX: Dynamically calculate legal masks from the leaf states, NOT the root states!
+                c0 = batch_states[:, 0].flatten(start_dim=1).bool()
+                c1 = batch_states[:, 1].flatten(start_dim=1).bool()
+                c2 = batch_states[:, 2].flatten(start_dim=1).bool()
+                batch_masks = c2 & ~c0 & ~c1
                 
                 with torch.no_grad():
                     logits, values = self.net(batch_states)
                     masked_logits = logits.masked_fill(~batch_masks, -1e9)
-                    policies = F.softmax(masked_logits, dim=-1)
                     
-                    policies_cpu = policies.cpu().numpy()
+                    # Send raw masked logits; C++ MCTS computes exponentiation internally
+                    policies_cpu = masked_logits.cpu().numpy()
                     values_cpu = values.cpu().numpy()
                 
                 # 3. Submit results back to the exact C++ trees that requested them
@@ -54,11 +57,14 @@ class SelfPlayWorker:
             # 4. Check for completed MCTS searches and play moves
             for i in range(self.num_games):
                 if self.trees[i].is_done(self.simulations):
-                    raw_policy = self.trees[i].root_policy(1.0)
+                    # Temperature 1.0 for initial exploration, 0.0 (argmax) for late game
+                    temp = 1.0 if len(self.game_histories[i]) < 15 else 0.0
+                    raw_policy = self.trees[i].root_policy(temp)
                     
-                    # Fix: Force 64-bit precision and strictly normalize to 1.0 for NumPy
                     mcts_policy = np.array(raw_policy, dtype=np.float64)
-                    mcts_policy /= np.sum(mcts_policy)
+                    policy_sum = np.sum(mcts_policy)
+                    if policy_sum > 0:
+                        mcts_policy /= policy_sum
                     
                     self.game_histories[i].append({
                         'state': self.states[i].encode(),
@@ -66,7 +72,7 @@ class SelfPlayWorker:
                         'player': self.states[i].get_current_player()
                     })
                     
-                    action = np.random.choice(81, p=mcts_policy)
+                    action = np.argmax(mcts_policy) if temp == 0.0 else np.random.choice(81, p=mcts_policy)
                     self.states[i].play(action)
                     self.trees[i].advance(action)
                     
@@ -75,45 +81,33 @@ class SelfPlayWorker:
                         self._process_completed_game(i)
                         games_completed += 1
                         
-                        # Reset this slot with a fresh game
+                        # Reset slot for a new game
                         self.states[i] = zerocross_engine.GameState()
                         self.trees[i] = zerocross_engine.MCTSTree(self.states[i], True)
                         
         return self.completed_games_data
 
     def _process_completed_game(self, game_idx):
-        winner = self.states[game_idx].get_winner() 
+        winner = self.states[game_idx].get_winner()
         
         for step in self.game_histories[game_idx]:
             reward = 1.0 if step['player'] == winner else (-1.0 if winner != 0 else 0.0)
             
-            # Apply D4 Symmetry: Turn 1 move into 8 augmented moves
+            # Apply D4 Symmetry augmentation
             augmented_steps = get_symmetries(step['state'], step['policy'], reward)
-            
-            # Extend the dataset with all 8 variations
             self.completed_games_data.extend(augmented_steps)
             
         self.game_histories[game_idx] = []
 
-
 if __name__ == "__main__":
     print("Initializing Neural Network...")
     net = ZeroCrossNet()
-    net.eval() # Lock BatchNorm layers for self-play
+    net.eval()
     
-    # Smart device selection: Only use CUDA if the GPU compute capability is >= 7.0
-    if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7:
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
-        print("Notice: Using CPU because local GPU is below Compute Capability 7.0")
-        
+    device = torch.device("cuda" if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7 else "cpu")
     net.to(device)
     
     print(f"Starting Batched Self-Play on {device}...")
-    # Test run: 10 concurrent games, only 50 MCTS simulations per move
     worker = SelfPlayWorker(net, num_concurrent_games=10, mcts_simulations=50)
-    
-    # Try to generate exactly 5 completed games of data
-    dataset = worker.generate_data(total_games_to_play=5)
-    print(f"Successfully generated {len(dataset)} training samples from 5 games!")
+    dataset = worker.generate_data(total_games_to_play=2)
+    print(f"Successfully generated {len(dataset)} training samples from 2 games!")
