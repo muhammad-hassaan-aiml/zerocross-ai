@@ -1,5 +1,6 @@
 import os
 import csv
+import json
 import time
 import sys
 import argparse
@@ -30,7 +31,22 @@ def estimate_buffer_memory_mb(buffer):
     return (bytes_per_sample * len(buffer)) / (1024 ** 2)
 
 def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_train=True, do_evaluate=True,
-                 concurrent_games=10, mcts_sims=50, eval_games=2, eval_sims=20, batch_size=512):
+                 concurrent_games=10, games_per_iteration=None, mcts_sims=50, eval_games=2, eval_sims=20,
+                 batch_size=512, num_res_blocks=None, num_channels=None, max_consecutive_rejections=5):
+    
+    # games_per_iteration is decoupled from concurrent_games: concurrent_games controls how many
+    # games run in-flight at once (bounded by GPU memory / batch efficiency), while
+    # games_per_iteration controls how much self-play data you actually generate before the next
+    # train+eval step. Defaulting them equal preserves old behavior if you don't pass it explicitly.
+    if games_per_iteration is None:
+        games_per_iteration = concurrent_games
+
+    net_kwargs = {}
+    if num_res_blocks is not None:
+        net_kwargs['num_res_blocks'] = num_res_blocks
+    if num_channels is not None:
+        net_kwargs['num_channels'] = num_channels
+
     device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
             
     print(f"Starting ZeroCross Training Pipeline on {device}")
@@ -44,15 +60,25 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         
     os.makedirs(drive_dir, exist_ok=True)
     model_path = os.path.join(drive_dir, "best_model.pth")
+    last_candidate_path = os.path.join(drive_dir, "last_candidate.pth")
     csv_path = os.path.join(drive_dir, "training_log.csv")
     buffer_path = os.path.join(drive_dir, "replay_buffer.pt")
+    state_path = os.path.join(drive_dir, "pipeline_state.json")
     
     if not os.path.exists(csv_path):
         with open(csv_path, mode='w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(["Iteration", "LR", "PI_Loss", "V_Loss", "Entropy", "WinRate_vs_Random", "Elo_Diff_vs_Champ", "Promoted"])
 
-    best_net = ZeroCrossNet()
+    # Small sidecar file tracking state that must survive even when nothing has been
+    # promoted yet (e.g. across separate Kaggle sessions), so a bad early RNG streak
+    # can't stall the run forever.
+    consecutive_rejections = 0
+    if os.path.exists(state_path):
+        with open(state_path) as f:
+            consecutive_rejections = json.load(f).get("consecutive_rejections", 0)
+
+    best_net = ZeroCrossNet(**net_kwargs)
     optimizer_state = None
     start_iteration = 0
     
@@ -108,7 +134,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             print("\n[1/4] Generating Batched Self Play Data")
             gen_start = time.time()
             worker = SelfPlayWorker(best_net, num_concurrent_games=concurrent_games, mcts_simulations=mcts_sims, temperature_moves=30)
-            new_samples = worker.generate_data(total_games_to_play=concurrent_games)
+            new_samples = worker.generate_data(total_games_to_play=games_per_iteration)
             gen_duration = time.time() - gen_start
             aug_duration = worker.total_augmentation_time
             avg_batch_size = worker.avg_batch_size
@@ -143,7 +169,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 do_train = False
             else:
                 train_start = time.time()
-                candidate_net = ZeroCrossNet().to(device)
+                candidate_net = ZeroCrossNet(**net_kwargs).to(device)
                 candidate_net.load_state_dict(best_net.state_dict())
                 
                 candidate_net, opt_state, metrics = train_network(
@@ -171,14 +197,38 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         
         if do_train:
             print("\n[4/4] Model Gating")
+
+            # Always persist the latest trained candidate, independent of gating.
+            # Otherwise, if promotion never succeeds, a restarted Kaggle session has
+            # nothing but the original random-init weights to resume from, even
+            # though real training happened.
+            torch.save({
+                'iteration': current_iter,
+                'model_state_dict': candidate_net.state_dict(),
+                'optimizer_state_dict': opt_state,
+                'learning_rate': current_lr,
+                'timestamp': time.time()
+            }, last_candidate_path)
+
             if not do_evaluate:
                 promoted = True
                 print("Evaluation skipped. Force promoting candidate.")
-                
+
+            if not promoted:
+                consecutive_rejections += 1
+                print(f"REJECTED Candidate failed to hit 55 percent. "
+                      f"({consecutive_rejections}/{max_consecutive_rejections} consecutive rejections)")
+
+                if consecutive_rejections >= max_consecutive_rejections:
+                    promoted = True
+                    print(f"Force-promoting after {consecutive_rejections} consecutive rejections "
+                          f"to avoid stalling on gating noise.")
+
             if promoted:
                 print(f"UPGRADE Candidate promoted! Saving to {model_path}")
                 best_net.load_state_dict(candidate_net.state_dict())
                 optimizer_state = opt_state
+                consecutive_rejections = 0
                 
                 checkpoint_data = {
                     'iteration': current_iter,
@@ -199,9 +249,9 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 if os.path.exists(old_champion_path):
                     os.remove(old_champion_path)
                     print(f"Deleted old champion {old_champion_path} to save space")
-                
-            else:
-                print("REJECTED Candidate failed to hit 55 percent. Keeping old champion.")
+
+            with open(state_path, "w") as f:
+                json.dump({"consecutive_rejections": consecutive_rejections}, f)
         
         with open(csv_path, mode='a', newline='') as f:
             writer = csv.writer(f)
@@ -237,13 +287,18 @@ if __name__ == "__main__":
     parser.add_argument("--train-only", action="store_true", help="Only train the network on existing buffer and force promote")
     parser.add_argument("--evaluate-only", action="store_true", help="Only evaluate the current best model")
     
-    parser.add_argument("--concurrent-games", type=int, default=10, help="Parallel games for self-play")
+    parser.add_argument("--concurrent-games", type=int, default=10, help="Parallel games in-flight during self-play (bounded by GPU memory)")
+    parser.add_argument("--games-per-iteration", type=int, default=None, help="Total self-play games generated per iteration before training (default: same as --concurrent-games)")
     parser.add_argument("--mcts-sims", type=int, default=50, help="MCTS simulations per move during self-play")
     parser.add_argument("--eval-games", type=int, default=2, help="Games per matchup in evaluation (e.g. 40 on Kaggle)")
     parser.add_argument("--eval-sims", type=int, default=20, help="MCTS simulations per move during evaluation")
     
     # New argument to scale batch size for GPU
     parser.add_argument("--batch-size", type=int, default=512, help="Training batch size")
+
+    parser.add_argument("--num-res-blocks", type=int, default=None, help="Override ZeroCrossNet residual block count (default: network.py's default)")
+    parser.add_argument("--num-channels", type=int, default=None, help="Override ZeroCrossNet channel width (default: network.py's default)")
+    parser.add_argument("--max-rejections", type=int, default=5, help="Force-promote candidate after this many consecutive gating rejections in a row, to avoid stalling on eval noise")
     
     args = parser.parse_args()
     
@@ -267,8 +322,12 @@ if __name__ == "__main__":
         do_train=do_train,
         do_evaluate=do_evaluate,
         concurrent_games=args.concurrent_games,
+        games_per_iteration=args.games_per_iteration,
         mcts_sims=args.mcts_sims,
         eval_games=args.eval_games,
         eval_sims=args.eval_sims,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        num_res_blocks=args.num_res_blocks,
+        num_channels=args.num_channels,
+        max_consecutive_rejections=args.max_rejections
     )
