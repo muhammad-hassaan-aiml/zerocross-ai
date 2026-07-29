@@ -7,7 +7,7 @@ class ResBlock(nn.Module):
     Standard Residual Block with Batch Normalization.
     Preserves spatial representation while deepening network feature extraction.
     """
-    def __init__(self, channels=128):
+    def __init__(self, channels=256):
         super().__init__()
         self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(channels)
@@ -24,25 +24,25 @@ class ResBlock(nn.Module):
 
 class ZeroCrossNet(nn.Module):
     """
-    Scaled-up AlphaZero Architecture for Ultimate Tic-Tac-Toe.
+    Grandmaster AlphaZero Architecture for Ultimate Tic-Tac-Toe.
     
     Specs:
       - Input:  [B, 6, 9, 9] tensor representation
-      - Backbone: 128 Filters, 6 Residual Blocks
+      - Backbone: 256 Filters, 12 Residual Blocks (~6.5M parameters)
       - Policy Head: Outputs raw logits for 81 actions
       - Value Head:  Outputs scalar outcome evaluation in [-1, 1]
     """
-    def __init__(self, num_res_blocks=6, num_channels=128):
+    def __init__(self, num_res_blocks=12, num_channels=256):
         super().__init__()
         
-        # Stem: [B, 6, 9, 9] -> [B, 128, 9, 9]
+        # Stem: [B, 6, 9, 9] -> [B, 256, 9, 9]
         self.stem = nn.Sequential(
             nn.Conv2d(6, num_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(num_channels),
             nn.ReLU()
         )
         
-        # Deep Residual Tower (6 Blocks)
+        # Deep Residual Tower (12 Blocks)
         self.res_blocks = nn.ModuleList([ResBlock(num_channels) for _ in range(num_res_blocks)])
         
         # Policy Head
