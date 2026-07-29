@@ -4,8 +4,9 @@ project(zerocross_engine)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Default to Release to ensure -O3 optimization on Kaggle
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
+  set(CMAKE_BUILD_TYPE Release)
 endif()
 
 add_executable(test_game_state 
@@ -32,6 +33,14 @@ add_executable(test_stress
 target_include_directories(test_stress PRIVATE include)
 target_compile_options(test_stress PRIVATE -fsanitize=address -fsanitize=undefined -O3 -g)
 target_link_options(test_stress PRIVATE -fsanitize=address -fsanitize=undefined)
+
+# Automatically discover pybind11's CMake directory from the active Python environment
+execute_process(
+    COMMAND python -c "import pybind11; print(pybind11.get_cmake_dir())"
+    OUTPUT_VARIABLE pybind11_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
 
 find_package(pybind11 REQUIRED)
 
