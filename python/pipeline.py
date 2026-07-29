@@ -194,6 +194,12 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 torch.save(checkpoint_data, history_path)
                 print(f"Historical champion archived to {history_path}")
                 
+                max_archives = 3
+                old_champion_path = os.path.join(drive_dir, f"champion_gen_{current_iter - max_archives}.pth")
+                if os.path.exists(old_champion_path):
+                    os.remove(old_champion_path)
+                    print(f"Deleted old champion {old_champion_path} to save space")
+                
             else:
                 print("REJECTED Candidate failed to hit 55 percent. Keeping old champion.")
         
@@ -217,7 +223,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         if do_generate:
             print(f"Average MCTS Batch Size: {avg_batch_size:.2f}")
             print(f"Data Generation Time:    {gen_duration:.2f} sec")
-            print(f"Augmentation Time:  {aug_duration:.2f} sec")
+            print(f"Augmentation Time:       {aug_duration:.2f} sec")
         if do_train:
             print(f"Network Training Time:   {train_duration:.2f} sec")
         if do_evaluate:
