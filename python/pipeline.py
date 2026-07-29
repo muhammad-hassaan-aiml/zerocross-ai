@@ -25,7 +25,7 @@ def estimate_buffer_memory_mb(buffer):
     return (bytes_per_sample * len(buffer)) / (1024 ** 2)
 
 def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_train=True, do_evaluate=True,
-                 concurrent_games=10, mcts_sims=50, eval_games=2, eval_sims=20):
+                 concurrent_games=10, mcts_sims=50, eval_games=2, eval_sims=20, batch_size=512):
     device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
             
     print(f"Starting ZeroCross Training Pipeline on {device}")
@@ -81,9 +81,10 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         current_iter = i + 1
         print(f"\nALPHAZERO ITERATION {current_iter} of {start_iteration + iterations}")
         
-        if current_iter <= 20:
+        # Stretched learning rate schedule for long 200+ hour runs
+        if current_iter <= 100:
             current_lr = 0.001
-        elif current_iter <= 50:
+        elif current_iter <= 250:
             current_lr = 0.0001
         else:
             current_lr = 0.00001
@@ -131,7 +132,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 print(f"Deleted old archive {old_archive_path} to save space")
         
         if do_train:
-            print("\n[2/4] Training Candidate Network")
+            print(f"\n[2/4] Training Candidate Network (Batch Size: {batch_size})")
             if len(replay_buffer) == 0:
                 print("Skipping training: Replay buffer is empty.")
                 do_train = False
@@ -143,7 +144,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 candidate_net, opt_state, metrics = train_network(
                     candidate_net, 
                     list(replay_buffer), 
-                    batch_size=32, 
+                    batch_size=batch_size, 
                     epochs=2, 
                     lr=current_lr,
                     device=device,
@@ -230,6 +231,9 @@ if __name__ == "__main__":
     parser.add_argument("--eval-games", type=int, default=2, help="Games per matchup in evaluation (e.g. 40 on Kaggle)")
     parser.add_argument("--eval-sims", type=int, default=20, help="MCTS simulations per move during evaluation")
     
+    # New argument to scale batch size for GPU
+    parser.add_argument("--batch-size", type=int, default=512, help="Training batch size")
+    
     args = parser.parse_args()
     
     do_generate = True
@@ -254,5 +258,6 @@ if __name__ == "__main__":
         concurrent_games=args.concurrent_games,
         mcts_sims=args.mcts_sims,
         eval_games=args.eval_games,
-        eval_sims=args.eval_sims
+        eval_sims=args.eval_sims,
+        batch_size=args.batch_size
     )
