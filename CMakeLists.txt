@@ -9,7 +9,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-add_executable(test_game_state 
+add_executable(test_game_state EXCLUDE_FROM_ALL
     src/game_state.cpp 
     tests/cpp/test_game_state.cpp
 )
@@ -17,7 +17,7 @@ target_include_directories(test_game_state PRIVATE include)
 target_compile_options(test_game_state PRIVATE -fsanitize=address -fsanitize=undefined -g)
 target_link_options(test_game_state PRIVATE -fsanitize=address -fsanitize=undefined)
 
-add_executable(test_mcts 
+add_executable(test_mcts EXCLUDE_FROM_ALL
     src/game_state.cpp 
     src/mcts.cpp 
     tests/cpp/test_mcts.cpp
@@ -26,7 +26,7 @@ target_include_directories(test_mcts PRIVATE include)
 target_compile_options(test_mcts PRIVATE -fsanitize=address -fsanitize=undefined -g)
 target_link_options(test_mcts PRIVATE -fsanitize=address -fsanitize=undefined)
 
-add_executable(test_stress 
+add_executable(test_stress EXCLUDE_FROM_ALL
     src/game_state.cpp 
     tests/cpp/test_stress.cpp
 )
