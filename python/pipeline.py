@@ -16,9 +16,11 @@ def estimate_buffer_memory_mb(buffer):
         return 0.0
     
     sample = buffer[0]
-    state_size = sys.getsizeof(sample[0]) + sum(sys.getsizeof(x) for x in sample[0])
-    policy_size = sys.getsizeof(sample[1]) + sum(sys.getsizeof(x) for x in sample[1])
-    reward_size = sys.getsizeof(sample[2])
+    
+    # Support both legacy lists and optimized numpy arrays
+    state_size = sample[0].nbytes if hasattr(sample[0], 'nbytes') else sys.getsizeof(sample[0]) + sum(sys.getsizeof(x) for x in sample[0])
+    policy_size = sample[1].nbytes if hasattr(sample[1], 'nbytes') else sys.getsizeof(sample[1]) + sum(sys.getsizeof(x) for x in sample[1])
+    reward_size = sample[2].nbytes if hasattr(sample[2], 'nbytes') else sys.getsizeof(sample[2])
     tuple_size = sys.getsizeof(sample)
     
     bytes_per_sample = state_size + policy_size + reward_size + tuple_size

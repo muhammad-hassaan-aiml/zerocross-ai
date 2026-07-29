@@ -2,7 +2,7 @@ import numpy as np
 
 def to_spatial_grid_state(state_flat):
     # Reshape to (6 channels, 3 macro_row, 3 macro_col, 3 micro_row, 3 micro_col)
-    tensor = np.array(state_flat, dtype=np.float32).reshape(6, 3, 3, 3, 3)
+    tensor = np.array(state_flat, dtype=np.int8).reshape(6, 3, 3, 3, 3)
     # Transpose to (6 channels, macro_row, micro_row, macro_col, micro_col)
     tensor = tensor.transpose(0, 1, 3, 2, 4)
     # Combine into true spatial grid (6, 9, 9)
@@ -13,7 +13,7 @@ def to_flat_state(state_spatial):
     tensor = state_spatial.reshape(6, 3, 3, 3, 3)
     # Transpose back to (6 channels, macro_row, macro_col, micro_row, micro_col)
     tensor = tensor.transpose(0, 1, 3, 2, 4)
-    return tensor.flatten().tolist()
+    return tensor.flatten().astype(np.int8)
 
 def to_spatial_grid_policy(policy_flat):
     # Reshape to (3 macro_row, 3 macro_col, 3 micro_row, 3 micro_col)
@@ -28,7 +28,7 @@ def to_flat_policy(policy_spatial):
     tensor = policy_spatial.reshape(3, 3, 3, 3)
     # Transpose back to (macro_row, macro_col, micro_row, micro_col)
     tensor = tensor.transpose(0, 2, 1, 3)
-    return tensor.flatten().tolist()
+    return tensor.flatten().astype(np.float32)
 
 def get_symmetries(state_flat, policy_flat, reward):
     """
@@ -40,6 +40,7 @@ def get_symmetries(state_flat, policy_flat, reward):
     policy_grid = to_spatial_grid_policy(policy_flat)
     
     augmented_data = []
+    reward_np = np.float32(reward)
     
     for i in range(4):
         # 2. Rotate by i * 90 degrees
@@ -50,7 +51,7 @@ def get_symmetries(state_flat, policy_flat, reward):
         augmented_data.append((
             to_flat_state(rot_state), 
             to_flat_policy(rot_policy), 
-            reward
+            reward_np
         ))
         
         # 3. Reflect (Horizontal flip of the rotated grids)
@@ -60,7 +61,7 @@ def get_symmetries(state_flat, policy_flat, reward):
         augmented_data.append((
             to_flat_state(flip_state), 
             to_flat_policy(flip_policy), 
-            reward
+            reward_np
         ))
         
     return augmented_data

@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import datetime
 import os
+import numpy as np
 from network import ZeroCrossNet
 
 class ZeroCrossDataset(Dataset):
@@ -16,7 +17,11 @@ class ZeroCrossDataset(Dataset):
     def __getitem__(self, idx):
         state, policy, reward = self.data[idx]
         
-        state_tensor = torch.tensor(state, dtype=torch.float32).view(6, 9, 9)
+        # Backwards compatibility: Handle both old lists and new numpy arrays gracefully
+        if isinstance(state, list):
+            state_tensor = torch.tensor(state, dtype=torch.float32).view(6, 9, 9)
+        else:
+            state_tensor = torch.from_numpy(state).float().view(6, 9, 9)
         
         c0 = state_tensor[0].flatten().bool()
         c1 = state_tensor[1].flatten().bool()
@@ -24,7 +29,11 @@ class ZeroCrossDataset(Dataset):
         
         legal_mask = c2 & ~c0 & ~c1
         
-        policy_tensor = torch.tensor(policy, dtype=torch.float32)
+        if isinstance(policy, list):
+            policy_tensor = torch.tensor(policy, dtype=torch.float32)
+        else:
+            policy_tensor = torch.from_numpy(policy).float()
+            
         reward_tensor = torch.tensor([reward], dtype=torch.float32)
         
         return state_tensor, legal_mask, policy_tensor, reward_tensor
