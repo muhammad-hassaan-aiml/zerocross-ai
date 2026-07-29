@@ -58,11 +58,13 @@ std::optional<std::array<float, 486>> MCTSTree::request_leaf() {
     // Traverse the tree using PUCT until an unexpanded leaf is found
     while (current->is_expanded()) {
         float best_puct = -1e9f;
-        std::shared_ptr<MCTSNode> best_child = nullptr;
+        // SAFE FALLBACK: Always guarantee at least the first child is selected if math fails
+        std::shared_ptr<MCTSNode> best_child = current->children[0]; 
 
         for (const auto& child : current->children) {
             float puct = calculate_puct(current, child);
-            if (puct > best_puct) {
+            // Ignore NaN values completely to prevent pointer corruption
+            if (puct > best_puct && !std::isnan(puct)) {
                 best_puct = puct;
                 best_child = child;
             }
@@ -76,7 +78,7 @@ std::optional<std::array<float, 486>> MCTSTree::request_leaf() {
         int winner = current->state.get_winner();
         int current_player = current->state.get_current_player();
         
-        float terminal_value = 0.0f; 
+        float terminal_value = 0.0f;
         // 0 represents a draw. If there's a winner, assign 1.0 or -1.0 based on perspective.
         if (winner != 0) { 
             terminal_value = (winner == current_player) ? 1.0f : -1.0f;
@@ -87,9 +89,6 @@ std::optional<std::array<float, 486>> MCTSTree::request_leaf() {
         
         while (backprop_node != nullptr) {
             backprop_node->visit_count++;
-            
-            // If the backprop node's turn matches the player who faces the terminal value, add it.
-            // Otherwise, subtract it (zero-sum perspective).
             if (backprop_node->state.get_current_player() == current_player) {
                 backprop_node->total_value += terminal_value; 
             } else {
@@ -98,7 +97,6 @@ std::optional<std::array<float, 486>> MCTSTree::request_leaf() {
             backprop_node = backprop_node->parent.lock();
         }
         
-        // Return nullopt to signal the caller to request again, as no NN eval is needed
         return std::nullopt; 
     }
 
@@ -114,12 +112,21 @@ void MCTSTree::submit_result(const std::vector<float>& policy, float value) {
 
     auto mask = pending_leaf->state.legal_mask();
     std::vector<int> legal_actions;
-    float policy_sum = 0.0f;
+    
+    // --- NUMERICAL STABILITY FIX ---
+    // Find the maximum logit among legal moves to prevent std::exp overflow to infinity
+    float max_logit = -1e9f;
+    for (int i = 0; i < GameState::NUM_CELLS; ++i) {
+        if (mask[i] && policy[i] > max_logit) {
+            max_logit = policy[i];
+        }
+    }
 
+    float policy_sum = 0.0f;
     for (int i = 0; i < GameState::NUM_CELLS; ++i) {
         if (mask[i]) {
             legal_actions.push_back(i);
-            policy_sum += std::exp(policy[i]); // Softmax extraction for valid moves
+            policy_sum += std::exp(policy[i] - max_logit); // Safe softmax subtraction
         }
     }
 
@@ -133,7 +140,7 @@ void MCTSTree::submit_result(const std::vector<float>& policy, float value) {
     // Expand the pending leaf
     for (size_t i = 0; i < legal_actions.size(); ++i) {
         int action = legal_actions[i];
-        float prior = std::exp(policy[action]) / policy_sum;
+        float prior = std::exp(policy[action] - max_logit) / policy_sum;
         
         if (is_root && add_noise_flag) {
             prior = (1.0f - DIRICHLET_EPSILON) * prior + DIRICHLET_EPSILON * noise[i];
