@@ -24,25 +24,32 @@ class ResBlock(nn.Module):
 
 class ZeroCrossNet(nn.Module):
     """
-    Grandmaster AlphaZero Architecture for Ultimate Tic-Tac-Toe.
+    AlphaZero-style Architecture for Ultimate Tic-Tac-Toe.
     
     Specs:
       - Input:  [B, 6, 9, 9] tensor representation
-      - Backbone: 256 Filters, 12 Residual Blocks (~6.5M parameters)
+      - Backbone: 128 Filters, 6 Residual Blocks (~2.0M parameters)
       - Policy Head: Outputs raw logits for 81 actions
       - Value Head:  Outputs scalar outcome evaluation in [-1, 1]
+
+    NOTE: sized for Ultimate Tic-Tac-Toe's actual complexity, not Chess/Go scale.
+    A 12-block/256-channel net (~14.4M params) is oversized for this game given
+    realistic self-play volumes on a single Kaggle GPU; it just burns your
+    games/hour budget on capacity the game doesn't need. Override via the
+    constructor args (or pipeline.py's --num-res-blocks/--num-channels) if you
+    want to scale it back up once the pipeline is proven out.
     """
-    def __init__(self, num_res_blocks=12, num_channels=256):
+    def __init__(self, num_res_blocks=6, num_channels=128):
         super().__init__()
         
-        # Stem: [B, 6, 9, 9] -> [B, 256, 9, 9]
+        # Stem: [B, 6, 9, 9] -> [B, 128, 9, 9]
         self.stem = nn.Sequential(
             nn.Conv2d(6, num_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(num_channels),
             nn.ReLU()
         )
         
-        # Deep Residual Tower (12 Blocks)
+        # Deep Residual Tower (6 Blocks)
         self.res_blocks = nn.ModuleList([ResBlock(num_channels) for _ in range(num_res_blocks)])
         
         # Policy Head
