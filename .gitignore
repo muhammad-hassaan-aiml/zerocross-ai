@@ -15,4 +15,4 @@ data/replay_buffer/*
 !data/replay_buffer/.gitkeep
 .ipynb_checkpoints/
 .DS_Store
-.vscode/
+.vscode/models/*.json
