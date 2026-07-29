@@ -32,7 +32,7 @@ class ZeroCrossDataset(Dataset):
 def alphazero_loss_and_metrics(pred_logits, pred_values, target_policies, target_rewards, legal_masks):
     value_loss = F.mse_loss(pred_values, target_rewards)
     
-    masked_logits = pred_logits.masked_fill(~legal_masks, -1e9)
+    masked_logits = pred_logits.masked_fill(~legal_masks, -1e4)
     log_preds = F.log_softmax(masked_logits, dim=1)
     
     policy_loss = -(target_policies * log_preds).sum(dim=1).mean()

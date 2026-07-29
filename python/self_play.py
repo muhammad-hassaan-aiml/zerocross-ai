@@ -56,7 +56,7 @@ class SelfPlayWorker:
                     else:
                         logits, values = self.net(batch_states)
                         
-                    masked_logits = logits.masked_fill(~batch_masks, -1e9)
+                    masked_logits = logits.masked_fill(~batch_masks, -1e4)
                     
                     policies_cpu = masked_logits.cpu().numpy()
                     values_cpu = values.cpu().numpy()

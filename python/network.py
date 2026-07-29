@@ -104,8 +104,8 @@ class ZeroCrossNet(nn.Module):
         # Forward pass
         logits, value = self.forward(state)
         
-        # Apply legal mask (-1e9 prevents illegal actions from receiving probability)
-        masked_logits = logits.masked_fill(~legal_mask, -1e9)
+        # Apply legal mask (-1e4 prevents illegal actions from receiving probability)
+        masked_logits = logits.masked_fill(~legal_mask, -1e4)
         probabilities = F.softmax(masked_logits, dim=-1)
         
         # 3. Convert back to native Python list and float for C++ pybind11 safety

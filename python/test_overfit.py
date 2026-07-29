@@ -47,7 +47,7 @@ def test_overfit():
         logits, values = net(states)
         
         # Mask illegal moves
-        logits = logits.masked_fill(~legal_masks, -1e9)
+        logits = logits.masked_fill(~legal_masks, -1e4)
         log_probs = F.log_softmax(logits, dim=1)
         
         # Calculate losses
@@ -65,7 +65,7 @@ def test_overfit():
     net.eval()
     with torch.no_grad():
         test_logits, test_values = net(states)
-        test_logits = test_logits.masked_fill(~legal_masks, -1e9)
+        test_logits = test_logits.masked_fill(~legal_masks, -1e4)
         test_probs = F.softmax(test_logits, dim=1)
         
         print("\n--- Overfit Verification ---")
