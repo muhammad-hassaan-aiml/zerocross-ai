@@ -3,6 +3,9 @@ import csv
 import time
 import sys
 import argparse
+
+sys.path.extend(['.', 'build', '../build', os.path.join(os.getcwd(), 'build')])
+
 import torch
 from collections import deque
 from network import ZeroCrossNet

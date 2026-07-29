@@ -1,6 +1,10 @@
 import time
 import torch
 import os
+import sys
+
+sys.path.extend(['.', 'build', '../build', os.path.join(os.getcwd(), 'build')])
+
 from network import ZeroCrossNet
 from self_play import SelfPlayWorker
 

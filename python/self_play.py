@@ -1,6 +1,11 @@
 import time
 import torch
 import numpy as np
+import os
+import sys
+
+sys.path.extend(['.', 'build', '../build', os.path.join(os.getcwd(), 'build')])
+
 import zerocross_engine
 from network import ZeroCrossNet
 from augment import get_symmetries
