@@ -1,4 +1,3 @@
-torch
 pybind11
 fastapi
 uvicorn
