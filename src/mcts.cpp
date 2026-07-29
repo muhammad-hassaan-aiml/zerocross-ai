@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 MCTSTree::MCTSTree(const GameState& root_state, bool add_noise) 
-    : add_noise_flag(add_noise), rng(42) {
+    : add_noise_flag(add_noise), rng(std::random_device{}()) {
     
     root = std::make_shared<MCTSNode>();
     root->state = root_state;
