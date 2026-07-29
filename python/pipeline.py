@@ -24,7 +24,7 @@ def estimate_buffer_memory_mb(buffer):
     bytes_per_sample = state_size + policy_size + reward_size + tuple_size
     return (bytes_per_sample * len(buffer)) / (1024 ** 2)
 
-def run_pipeline(iterations=100, max_buffer_size=500000, do_generate=True, do_train=True, do_evaluate=True,
+def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_train=True, do_evaluate=True,
                  concurrent_games=10, mcts_sims=50, eval_games=2, eval_sims=20):
     device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
             
