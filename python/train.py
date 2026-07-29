@@ -58,13 +58,11 @@ def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, devic
     if is_cuda:
         torch.backends.cudnn.benchmark = True
         
-    optimal_workers = min(4, os.cpu_count() or 1)
-        
     dataloader = DataLoader(
         dataset, 
         batch_size=batch_size, 
         shuffle=True,
-        num_workers=optimal_workers,
+        num_workers=0,
         pin_memory=is_cuda
     )
     
