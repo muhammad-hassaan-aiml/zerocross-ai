@@ -1,7 +1,12 @@
 import torch
 import os
 
-def validate_replay_buffer(filepath="models/replay_buffer.pt"):
+def validate_replay_buffer(filepath=None):
+    base_dir = "/kaggle/working/models" if os.path.exists("/kaggle/working") else "models"
+    
+    if filepath is None:
+        filepath = os.path.join(base_dir, "replay_buffer.pt")
+        
     print(f"Starting Data Integrity Check on {filepath}...")
     
     if not os.path.exists(filepath):

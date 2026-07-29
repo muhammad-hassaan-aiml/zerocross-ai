@@ -2,7 +2,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-def plot_training_metrics(csv_path="models/training_log.csv", save_dir="models/plots"):
+def plot_training_metrics(csv_path=None, save_dir=None):
+    base_dir = "/kaggle/working/models" if os.path.exists("/kaggle/working") else "models"
+    
+    if csv_path is None:
+        csv_path = os.path.join(base_dir, "training_log.csv")
+    if save_dir is None:
+        save_dir = os.path.join(base_dir, "plots")
+
     if not os.path.exists(csv_path):
         print(f"Log file not found at {csv_path}. Run the pipeline first.")
         return
