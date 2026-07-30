@@ -27,6 +27,7 @@ class Evaluator:
         states = [zerocross_engine.GameState() for _ in range(num_games)]
         p1_color = [1 if g % 2 == 0 else -1 for g in range(num_games)]
         trees = [None] * num_games
+        ply_counts = [0] * num_games
         
         p1_wins, p2_wins, draws = 0, 0, 0
         active_games = set(range(num_games))
@@ -56,12 +57,11 @@ class Evaluator:
                 active_net = net1 if is_p1_turn else net2
                 
                 if active_net is None:
-                    # Execute Random Agent Move
                     mask = states[i].legal_mask()
                     valid = [idx for idx, legal in enumerate(mask) if legal]
                     states[i].play(random.choice(valid))
+                    ply_counts[i] += 1
                 else:
-                    # Execute Neural MCTS Move
                     if trees[i] is None:
                         trees[i] = zerocross_engine.MCTSTree(states[i], False)
                         
@@ -73,15 +73,25 @@ class Evaluator:
                             else:
                                 net2_reqs.append((i, leaf))
                     else:
-                        raw_policy = trees[i].root_policy(0.0)
+                        temp = 1.0 if ply_counts[i] < 6 else 0.0
+                        raw_policy = trees[i].root_policy(temp)
                         mcts_policy = np.array(raw_policy, dtype=np.float64)
                         policy_sum = np.sum(mcts_policy)
+                        
                         if policy_sum > 0: 
                             mcts_policy /= policy_sum
-                        states[i].play(np.argmax(mcts_policy))
-                        trees[i] = None # Reset tree for the next ply
+                        else:
+                            mcts_policy = np.ones(81) / 81.0
+                            
+                        if temp > 0.0:
+                            action = np.random.choice(81, p=mcts_policy)
+                        else:
+                            action = np.argmax(mcts_policy)
+                            
+                        states[i].play(action)
+                        ply_counts[i] += 1
+                        trees[i] = None
                         
-            # Evaluate batched leaf requests
             for net, reqs in [(net1, net1_reqs), (net2, net2_reqs)]:
                 if net is not None and len(reqs) > 0:
                     indices = [req[0] for req in reqs]
@@ -148,7 +158,6 @@ if __name__ == "__main__":
     
     evaluator = Evaluator(device=device)
     
-    # Tiny test run to verify batched logic flows end-to-end
     promoted, rand_wr, champ_wr, elo_diff = evaluator.run_full_evaluation(
         candidate_net=cand, 
         champion_net=champ, 
