@@ -2,4 +2,3 @@ pybind11
 numpy
 pandas
 matplotlib
-torch
