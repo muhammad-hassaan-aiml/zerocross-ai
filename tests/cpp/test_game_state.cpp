@@ -20,7 +20,7 @@ void test_free_move_trigger() {
     
     // Sequence to force player X to win macro-grid 0 via column 0 (cells 0, 3, 6).
     // The final winning move must target micro-cell 0 so player O is directed 
-    // to macro-grid 0, which is now decided—thereby triggering a free move.
+    // to macro-grid 0, which is now decided thereby triggering a free move.
 
     // 1. X plays macro 0, micro 3 -> directs O to macro-grid 3
     state.play(3); 
@@ -49,7 +49,7 @@ void test_free_move_trigger() {
     // Macros 3 and 6 have 8 legal moves remaining each.
     // Macros 1, 2, 4, 5, 7, 8 have 9 legal moves each (54 total).
     // Expected total legal moves = 70.
-    assert(legal_count > 9);
+    assert(legal_count == 70);
 }
 
 void test_random_simulation_loop() {
