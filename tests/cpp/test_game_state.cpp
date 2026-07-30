@@ -15,6 +15,21 @@ void test_initial_state() {
     }
 }
 
+void test_occupancy_guard() {
+    GameState state;
+    
+    // X plays in macro 0, micro 0
+    state.play(0);
+    assert(state.get_current_player() == GameState::PLAYER_O);
+    assert(state.legal_mask()[0] == false);
+    
+    // O attempts to play in the exact same cell
+    state.play(0);
+    
+    // The turn should not have advanced; it should still be O's turn
+    assert(state.get_current_player() == GameState::PLAYER_O);
+}
+
 void test_free_move_trigger() {
     GameState state;
     
@@ -81,6 +96,7 @@ int main() {
     std::cout << "Running GameState unit tests..." << std::endl;
 
     test_initial_state();
+    test_occupancy_guard();
     test_free_move_trigger();
     test_random_simulation_loop();
 
