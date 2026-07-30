@@ -1,9 +1,9 @@
 #!/bin/bash
 # Exit immediately if a command exits with a non-zero status
-set -e 
+set -e
 
 echo "Step 1: Installing Python Dependencies"
-pip install pybind11 pandas matplotlib
+python -m pip install pybind11 pandas matplotlib
 
 echo "Step 2: Building C++ Engine"
 mkdir -p build
