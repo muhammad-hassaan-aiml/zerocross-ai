@@ -52,7 +52,12 @@ execute_process(
     OUTPUT_VARIABLE pybind11_DIR
     OUTPUT_STRIP_TRAILING_WHITESPACE
     ERROR_QUIET
+    RESULT_VARIABLE pybind11_status
 )
+
+if(NOT pybind11_status EQUAL 0)
+    message(FATAL_ERROR "pybind11 not found! Hint: Run 'python -m pip install pybind11' in your active Python environment before building.")
+endif()
 
 find_package(pybind11 REQUIRED)
 
