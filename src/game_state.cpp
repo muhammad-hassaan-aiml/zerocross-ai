@@ -1,5 +1,6 @@
 #include "game_state.h"
 #include <algorithm>
+#include <stdexcept>
 
 GameState::GameState() 
     : current_player(PLAYER_X), active_grid(-1) { 
@@ -212,6 +213,12 @@ GameState GameState::from_array(const std::vector<int>& board, int active_grid) 
                 o_count++;
             }
         }
+    }
+
+    // Parity validation: O can never have more pieces than X, 
+    // and X can never be more than 1 piece ahead of O.
+    if (o_count > x_count || x_count > o_count + 1) {
+        throw std::invalid_argument("Invalid board state: turn parity mismatch.");
     }
 
     // Turn parity inference
