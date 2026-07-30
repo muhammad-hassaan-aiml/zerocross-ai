@@ -9,13 +9,15 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Option to enable sanitizers (default OFF for safe Kaggle builds)
+option(BUILD_WITH_SANITIZERS "Build tests with ASan and UBSan" OFF)
+
 add_executable(test_game_state EXCLUDE_FROM_ALL
     src/game_state.cpp 
     tests/cpp/test_game_state.cpp
 )
 target_include_directories(test_game_state PRIVATE include)
-target_compile_options(test_game_state PRIVATE -fsanitize=address -fsanitize=undefined -g)
-target_link_options(test_game_state PRIVATE -fsanitize=address -fsanitize=undefined)
+target_compile_options(test_game_state PRIVATE -g)
 
 add_executable(test_mcts EXCLUDE_FROM_ALL
     src/game_state.cpp 
@@ -23,16 +25,26 @@ add_executable(test_mcts EXCLUDE_FROM_ALL
     tests/cpp/test_mcts.cpp
 )
 target_include_directories(test_mcts PRIVATE include)
-target_compile_options(test_mcts PRIVATE -fsanitize=address -fsanitize=undefined -g)
-target_link_options(test_mcts PRIVATE -fsanitize=address -fsanitize=undefined)
+target_compile_options(test_mcts PRIVATE -g)
 
 add_executable(test_stress EXCLUDE_FROM_ALL
     src/game_state.cpp 
     tests/cpp/test_stress.cpp
 )
 target_include_directories(test_stress PRIVATE include)
-target_compile_options(test_stress PRIVATE -fsanitize=address -fsanitize=undefined -O3 -g)
-target_link_options(test_stress PRIVATE -fsanitize=address -fsanitize=undefined)
+target_compile_options(test_stress PRIVATE -O3 -g)
+
+# Apply sanitizers only if explicitly enabled
+if(BUILD_WITH_SANITIZERS)
+    target_compile_options(test_game_state PRIVATE -fsanitize=address -fsanitize=undefined)
+    target_link_options(test_game_state PRIVATE -fsanitize=address -fsanitize=undefined)
+    
+    target_compile_options(test_mcts PRIVATE -fsanitize=address -fsanitize=undefined)
+    target_link_options(test_mcts PRIVATE -fsanitize=address -fsanitize=undefined)
+    
+    target_compile_options(test_stress PRIVATE -fsanitize=address -fsanitize=undefined)
+    target_link_options(test_stress PRIVATE -fsanitize=address -fsanitize=undefined)
+endif()
 
 # Automatically discover pybind11's CMake directory from the active Python environment
 execute_process(
