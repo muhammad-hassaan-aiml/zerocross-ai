@@ -3,7 +3,7 @@
 set -e 
 
 echo "Step 1: Installing Python Dependencies"
-pip install -r requirements.txt
+pip install pybind11 pandas matplotlib
 
 echo "Step 2: Building C++ Engine"
 mkdir -p build
