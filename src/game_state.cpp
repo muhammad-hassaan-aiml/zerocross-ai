@@ -2,9 +2,9 @@
 #include <algorithm>
 
 GameState::GameState() 
-    : current_player(1), active_grid(-1) { // Assuming PLAYER_X is 1
-    micro_board.fill(0); // Assuming EMPTY is 0
-    macro_board.fill(0);
+    : current_player(PLAYER_X), active_grid(-1) { 
+    micro_board.fill(EMPTY); 
+    macro_board.fill(EMPTY);
 }
 
 std::array<int, 9> GameState::get_micro_grid(int macro_index) const {
@@ -24,11 +24,9 @@ int GameState::check_win(const std::array<int, 9>& grid) const {
         {0, 4, 8}, {2, 4, 6}             // Diagonals
     };
 
-    // Note: Replaced EMPTY and DRAW with raw assumptions (0 and 2) 
-    // if they are defined in your header as macros, you can revert them.
     for (const auto& pattern : WIN_PATTERNS) {
-        if (grid[pattern[0]] != 0 &&
-            grid[pattern[0]] != 2 &&
+        if (grid[pattern[0]] != EMPTY &&
+            grid[pattern[0]] != DRAW &&
             grid[pattern[0]] == grid[pattern[1]] &&
             grid[pattern[1]] == grid[pattern[2]]) {
             return grid[pattern[0]];
@@ -38,17 +36,22 @@ int GameState::check_win(const std::array<int, 9>& grid) const {
     // Evaluate for micro-grid draw condition
     bool full = true;
     for (int cell : grid) {
-        if (cell == 0) {
+        if (cell == EMPTY) {
             full = false;
             break;
         }
     }
 
-    return full ? 2 : 0;
+    return full ? DRAW : EMPTY;
 }
 
 void GameState::play(int action) {
     if (action < 0 || action >= NUM_CELLS) {
+        return;
+    }
+
+    // Occupancy guard: prevent overwriting a non-empty cell
+    if (micro_board[action] != EMPTY) {
         return;
     }
 
@@ -59,13 +62,13 @@ void GameState::play(int action) {
     micro_board[action] = current_player;
 
     // Update macro-board state if the sub-grid was undecided
-    if (macro_board[macro_idx] == 0) {
+    if (macro_board[macro_idx] == EMPTY) {
         std::array<int, 9> current_micro = get_micro_grid(macro_idx);
         macro_board[macro_idx] = check_win(current_micro);
     }
 
     // Determine target macro-grid for the next player
-    if (macro_board[micro_idx] != 0) {
+    if (macro_board[micro_idx] != EMPTY) {
         // Free-move rule: Target sub-grid is already decided (won or drawn)
         active_grid = -1;
     } else {
@@ -73,12 +76,12 @@ void GameState::play(int action) {
     }
 
     // Swap active player turn
-    current_player = (current_player == 1) ? -1 : 1;
+    current_player = (current_player == PLAYER_X) ? PLAYER_O : PLAYER_X;
 }
 
 bool GameState::is_terminal() const {
     // Game ends if the global macro-board has a winner
-    if (check_win(macro_board) != 0) {
+    if (check_win(macro_board) != EMPTY) {
         return true;
     }
 
@@ -96,12 +99,12 @@ bool GameState::is_terminal() const {
 int GameState::get_winner() const {
     int status = check_win(macro_board);
     
-    // If PLAYER_X (1) or PLAYER_O (-1) won the macro board, return their value
-    if (status == 1 || status == -1) {
+    // If PLAYER_X or PLAYER_O won the macro board, return their value
+    if (status == PLAYER_X || status == PLAYER_O) {
         return status;
     }
     
-    // If EMPTY (0) or DRAW (2), return 0 (no one gets a win reward)
+    // If EMPTY or DRAW, return 0 (no one gets a win reward)
     return 0;
 }
 
@@ -110,7 +113,7 @@ std::array<bool, GameState::NUM_CELLS> GameState::legal_mask() const {
     mask.fill(false);
 
     // If global macro-board is already decided, mask remains all false
-    if (check_win(macro_board) != 0) {
+    if (check_win(macro_board) != EMPTY) {
         return mask;
     }
 
@@ -118,12 +121,12 @@ std::array<bool, GameState::NUM_CELLS> GameState::legal_mask() const {
         int macro_idx = i / 9;
 
         // Disallow moves in already-decided macro-grids
-        if (macro_board[macro_idx] != 0) {
+        if (macro_board[macro_idx] != EMPTY) {
             continue;
         }
 
         // Disallow moves on non-empty micro-cells
-        if (micro_board[i] != 0) {
+        if (micro_board[i] != EMPTY) {
             continue;
         }
 
@@ -140,7 +143,7 @@ std::array<float, 486> GameState::encode() const {
     std::array<float, 486> tensor;
     tensor.fill(0.0f);
 
-    int opponent = -current_player;
+    int opponent = (current_player == PLAYER_X) ? PLAYER_O : PLAYER_X;
 
     for (int i = 0; i < NUM_CELLS; ++i) {
         int macro_idx = i / 9;
@@ -156,7 +159,7 @@ std::array<float, 486> GameState::encode() const {
 
         // Channel 2: Active-grid mask
         if (active_grid == -1) {
-            if (macro_board[macro_idx] == 0) {
+            if (macro_board[macro_idx] == EMPTY) {
                 tensor[2 * NUM_CELLS + i] = 1.0f;
             }
         } else if (macro_idx == active_grid) {
@@ -172,7 +175,7 @@ std::array<float, 486> GameState::encode() const {
             tensor[4 * NUM_CELLS + i] = 1.0f;
         }
         // Channel 5: Drawn macro-grids
-        else if (macro_board[macro_idx] == 2) {
+        else if (macro_board[macro_idx] == DRAW) {
             tensor[5 * NUM_CELLS + i] = 1.0f;
         }
     }
@@ -203,16 +206,16 @@ GameState GameState::from_array(const std::vector<int>& board, int active_grid) 
         state.macro_board[m] = state.check_win(micro);
 
         for (int cell : micro) {
-            if (cell == 1) {
+            if (cell == PLAYER_X) {
                 x_count++;
-            } else if (cell == -1) {
+            } else if (cell == PLAYER_O) {
                 o_count++;
             }
         }
     }
 
     // Turn parity inference
-    state.current_player = (x_count > o_count) ? -1 : 1;
+    state.current_player = (x_count > o_count) ? PLAYER_O : PLAYER_X;
 
     return state;
 }
