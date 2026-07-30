@@ -66,7 +66,7 @@ def train_network(net, dataset_tuples, batch_size=64, epochs=10, lr=0.001, devic
         pin_memory=is_cuda
     )
     
-    optimizer = optim.Adam(net.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = optim.AdamW(net.parameters(), lr=lr, weight_decay=1e-4)
     scaler = torch.amp.GradScaler('cuda', enabled=is_cuda)
     
     if optimizer_state is not None:
