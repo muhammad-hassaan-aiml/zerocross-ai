@@ -44,7 +44,7 @@ private:
     bool add_noise_flag;
 
     // Standard AlphaZero hyperparameters
-    static constexpr float DIRICHLET_ALPHA = 0.3f; 
+    static constexpr float DIRICHLET_ALPHA = 1.0f; 
     static constexpr float DIRICHLET_EPSILON = 0.25f; 
     
     // Internal PRNG for tree-specific randomness (noise)

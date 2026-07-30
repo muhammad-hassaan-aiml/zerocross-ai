@@ -85,7 +85,13 @@ class ZeroCrossNet(nn.Module):
 
     @torch.no_grad()
     def predict(self, state, legal_mask):
-        """Used during self-play inference. Handles flat, unbatched arrays safely."""
+        """
+        Used during self-play inference. Handles flat, unbatched arrays safely.
+        
+        WARNING: This returns post-softmax probabilities. MCTSTree::submit_result 
+        expects raw logits and applies its own softmax. Do not wire this method 
+        directly into the C++ MCTS evaluation loop.
+        """
         self.eval() 
         
         # 1. Convert to tensors if passed as lists/numpy arrays

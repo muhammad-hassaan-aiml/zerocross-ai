@@ -9,7 +9,7 @@ echo "Step 2: Building C++ Engine"
 mkdir -p build
 cd build
 cmake ..
-make -j$(nproc)
+make -j$(nproc) zerocross_engine test_game_state test_mcts
 
 echo "Step 3: Running C++ Unit Tests"
 ./test_game_state

@@ -72,15 +72,17 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
 
     # Small sidecar file tracking state that must survive even when nothing has been
     # promoted yet (e.g. across separate Kaggle sessions), so a bad early RNG streak
-    # can't stall the run forever.
+    # can't stall the run forever, and iterations don't reset.
     consecutive_rejections = 0
+    start_iteration = 0
     if os.path.exists(state_path):
         with open(state_path) as f:
-            consecutive_rejections = json.load(f).get("consecutive_rejections", 0)
+            state_data = json.load(f)
+            consecutive_rejections = state_data.get("consecutive_rejections", 0)
+            start_iteration = state_data.get("total_iterations", 0)
 
     best_net = ZeroCrossNet(**net_kwargs)
     optimizer_state = None
-    start_iteration = 0
     
     if os.path.exists(model_path):
         print(f"Loading existing champion from {model_path}")
@@ -89,7 +91,9 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
             best_net.load_state_dict(checkpoint['model_state_dict'])
             optimizer_state = checkpoint.get('optimizer_state_dict', None)
-            start_iteration = checkpoint.get('iteration', 0)
+            # Only fallback to checkpoint iteration if JSON state didn't track it
+            if start_iteration == 0:
+                start_iteration = checkpoint.get('iteration', 0)
         else:
             best_net.load_state_dict(checkpoint)
             
@@ -250,8 +254,12 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                     os.remove(old_champion_path)
                     print(f"Deleted old champion {old_champion_path} to save space")
 
+            # Save pipeline state (streaks and total iteration count)
             with open(state_path, "w") as f:
-                json.dump({"consecutive_rejections": consecutive_rejections}, f)
+                json.dump({
+                    "consecutive_rejections": consecutive_rejections,
+                    "total_iterations": current_iter
+                }, f)
         
         with open(csv_path, mode='a', newline='') as f:
             writer = csv.writer(f)
