@@ -28,23 +28,27 @@ def main():
         print(f"Active Grid: {active_grid if active_grid != -1 else 'ANY (Free Move)'}")
         
         # Human Turn
-        # Human Turn
         try:
-            move = int(input("Enter your move (0-80): "))
-            macro_target = move // 9  # Calculates which of the 9 macro-grids you clicked in
+            print("--- Your Turn ---")
+            macro = int(input("Which Macro-Grid? (0-8): "))
+            micro = int(input("Which Micro-Cell inside it? (0-8): "))
+            
+            # The UI translates your 2 numbers into the AI's flat 0-80 index
+            move = (macro * 9) + micro 
             
             if move < 0 or move > 80 or board[move] != 0:
                 print("Invalid move: Cell is taken or out of bounds. Try again.")
                 continue
                 
             # RULE CHECK: Are you playing in the forced macro-grid?
-            if active_grid != -1 and macro_target != active_grid:
+            if active_grid != -1 and macro != active_grid:
                 print(f"ILLEGAL MOVE: You MUST play in macro-grid {active_grid}!")
                 continue
                 
             board[move] = 1  # Human is X
-            active_grid = move % 9
+            active_grid = micro 
         except ValueError:
+            print("Please enter valid numbers.")
             continue
 
         print("\nAI is thinking...")

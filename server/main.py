@@ -21,7 +21,7 @@ net = None
 def load_model():
     global net
     # Path to the latest trained model weights
-    model_path = os.path.join(os.path.dirname(__file__), '../models/latest_checkpoint.pth')
+    model_path = os.path.join(os.path.dirname(__file__), '../models/best_model.pth')
     
     print(f"Loading ZeroCross AI Champion onto {device}...")
     net = ZeroCrossNet()
