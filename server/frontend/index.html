@@ -198,9 +198,7 @@ body {
 .status-bad { color: var(--ink-red); }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
-/* Native select styling (used for Model Checkpoint — browser handles the
-   popover natively, so it can never get clipped or double-scrolled by a
-   parent container). */
+/* Native select styling */
 .select-wrap { position: relative; width: 100%; }
 .native-select {
   width: 100%;
@@ -228,9 +226,7 @@ body {
   color: var(--chalk-dim);
 }
 
-/* Theme swatch grid — every theme is visible at a glance with no nested
-   scrollbar, and hovering previews it live on the board because the drawer
-   never fully covers the board (see .settings-drawer below). */
+/* Theme swatch grid */
 .theme-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -272,7 +268,7 @@ body {
 }
 .theme-card.selected .theme-card-name { color: var(--chalk); }
 
-/* Toggle switch (used for Sound Effects) */
+/* Toggle switch */
 .toggle-row {
   display: flex;
   align-items: center;
@@ -357,12 +353,6 @@ body {
   min-height: 1rem;
 }
 
-/* Settings drawer — docks to the right edge instead of sitting in a small
-   centered box. This is the fix for the reported UX problems:
-   1) Only ONE scroll container (.drawer-body), so there's never an outer
-      scrollbar plus an inner dropdown scrollbar to fight with.
-   2) It never fully covers the board and the backdrop is a plain dim with
-      no blur, so hovering a theme card to preview it actually works. */
 .drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -1262,7 +1252,8 @@ async function triggerAIMove() {
     if (data.move !== -1) {
       makeMove(data.move, aiPlayer);
       if (data.value !== undefined) {
-        updateEvalBar(data.value);
+        // Fix: Multiply raw engine value by aiPlayer side to sync with UI X vs O colors
+        updateEvalBar(data.value * aiPlayer);
       }
     }
 
@@ -1294,13 +1285,11 @@ function makeMove(idx, player) {
   if (!wasDecided && macroStatus[macro] !== 0) SoundFX.microWin();
 
   freeMoveRule = false;
-  if (macroStatus[macro] !== 0) {
-    // The board just played in is now decided — the next player is free.
-    activeGrid = -1;
-  } else if (macroStatus[micro] !== 0) {
-    // Ultimate Tic-Tac-Toe free-move rule: this move sends the opponent to
-    // a board that is already won or full, so instead of locking them out
-    // (the bug that made the game get stuck), they get to play anywhere.
+  
+  // FIX: The next active grid is strictly determined by the micro-cell played.
+  // Winning the current macro-grid does NOT give a free move. Only if the TARGET
+  // macro-grid is already won or full does the next player get a free move.
+  if (macroStatus[micro] !== 0) {
     activeGrid = -1;
     freeMoveRule = true;
   } else {
