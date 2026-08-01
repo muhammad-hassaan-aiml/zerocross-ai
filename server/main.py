@@ -16,22 +16,57 @@ app = FastAPI(title="ZeroCross AI Engine")
 
 device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
 net = None
+current_loaded_model = None
+models_dir = os.path.join(os.path.dirname(__file__), '../models')
+
+def load_specific_model(filename):
+    global net, current_loaded_model
+    model_path = os.path.join(models_dir, filename)
+    
+    print(f"Loading {filename} onto {device}...")
+    new_net = ZeroCrossNet()
+    if os.path.exists(model_path):
+        new_net.load_checkpoint(model_path)
+        new_net.to(device)
+        new_net.eval()
+        net = new_net
+        current_loaded_model = filename
+        print(f"Model {filename} loaded successfully!")
+        return True
+    else:
+        print(f"WARNING: Model {filename} not found!")
+        return False
 
 @app.on_event("startup")
-def load_model():
+def startup_event():
     global net
-    # Path to the latest trained model weights
-    model_path = os.path.join(os.path.dirname(__file__), '../models/best_model.pth')
-    
-    print(f"Loading ZeroCross AI Champion onto {device}...")
+    # Initialize a baseline network on startup
     net = ZeroCrossNet()
-    if os.path.exists(model_path):
-        net.load_checkpoint(model_path)
-        print("Model loaded successfully!")
-    else:
-        print("WARNING: Model not found! Using random initialization.")
     net.to(device)
     net.eval()
+    print("ZeroCross Engine Server Started. Awaiting model selection from UI.")
+
+@app.get("/models")
+def get_available_models():
+    """Scans the models directory and returns all available .pth files."""
+    if not os.path.exists(models_dir):
+        return {"models": []}
+    
+    pth_files = [f for f in os.listdir(models_dir) if f.endswith('.pth')]
+    pth_files.sort() 
+    return {"models": pth_files, "current": current_loaded_model}
+
+class LoadModelRequest(BaseModel):
+    filename: str
+
+@app.post("/load")
+def load_model_endpoint(req: LoadModelRequest):
+    """Hot-swaps the active neural network in memory."""
+    success = load_specific_model(req.filename)
+    if success:
+        return {"message": f"Successfully loaded {req.filename}"}
+    else:
+        raise HTTPException(status_code=404, detail="Model file not found")
 
 class MoveRequest(BaseModel):
     board: List[int]
