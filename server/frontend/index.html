@@ -1,0 +1,1375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1e332a">
+<title>ZeroCross — Ultimate Tic-Tac-Toe Engine</title>
+<meta name="description" content="Play Ultimate Tic-Tac-Toe against ZeroCross, a self-taught AlphaZero-style engine.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%231e332a'/%3E%3Cg stroke='%23eef0e2' stroke-width='6' stroke-linecap='round'%3E%3Cline x1='34' y1='10' x2='34' y2='90'/%3E%3Cline x1='66' y1='10' x2='66' y2='90'/%3E%3Cline x1='10' y1='34' x2='90' y2='34'/%3E%3Cline x1='10' y1='66' x2='90' y2='66'/%3E%3C/g%3E%3Cg stroke='%23f0a8a0' stroke-width='7' stroke-linecap='round'%3E%3Cline x1='44' y1='44' x2='56' y2='56'/%3E%3Cline x1='56' y1='44' x2='44' y2='56'/%3E%3C/g%3E%3Ccircle cx='22' cy='22' r='7' fill='none' stroke='%239fd3e8' stroke-width='6'/%3E%3C/svg%3E">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+  --board-bg: #1e332a;
+  --board-bg-2: #24392e;
+  --wood: #4d3826;
+  --wood-dark: #2f2116;
+  --chalk: #eef0e2;
+  --chalk-dim: #a9b3a2;
+  --chalk-yellow: #e8d17a;
+  --chalk-pink: #f0a8a0;
+  --chalk-blue: #9fd3e8;
+  --ink-red: #c1495a;
+  --ink-blue: #6a9fb5;
+  --ink-gray: #8a8f86;
+  --tray: #2a2118;
+  --tray-line: rgba(238, 240, 226, 0.14);
+}
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  font-family: 'Kalam', cursive;
+  background: var(--wood-dark);
+  color: var(--chalk);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.mono { font-family: 'JetBrains Mono', monospace; }
+
+.eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--chalk-dim);
+}
+
+.app-shell { min-height: 100dvh; display: flex; flex-direction: column; }
+@media (min-width: 1024px) {
+  .app-shell { height: 100dvh; overflow: hidden; }
+}
+
+.content {
+  flex: 1;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  padding: 1.25rem;
+  min-height: 0;
+}
+@media (min-width: 1024px) {
+  .content { flex-direction: row; align-items: center; gap: 3rem; padding: 2rem 3rem; }
+}
+
+.tray-panel {
+  background: var(--tray);
+  border: 1px solid var(--tray-line);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.board-frame {
+  background: linear-gradient(150deg, var(--wood), var(--wood-dark));
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  transition: background 0.3s ease;
+}
+
+.board-grid {
+  position: relative;
+  background-color: var(--board-bg);
+  background-image:
+    radial-gradient(ellipse at 25% 15%, var(--board-bg-2), transparent 55%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  transition: background-color 0.3s ease;
+}
+
+.macro-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.12);
+  border: 2px solid var(--tray-line);
+  border-radius: 8px;
+  padding: 4px;
+  position: relative;
+  transition: box-shadow 0.3s ease, opacity 0.3s ease, border-color 0.3s ease;
+}
+.macro-active {
+  border-color: var(--chalk-yellow);
+  box-shadow: 0 0 0 3px rgba(232, 209, 122, 0.15), 0 0 26px rgba(232, 209, 122, 0.2);
+}
+.macro-inactive { opacity: 0.55; }
+
+.micro-cell {
+  appearance: none;
+  background: transparent;
+  border: 1px dashed var(--tray-line);
+  border-radius: 3px;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: background-color 0.15s ease;
+}
+.micro-cell:hover:not(:disabled) { background: rgba(238, 240, 226, 0.06); cursor: crosshair; }
+.micro-cell:disabled { cursor: default; }
+.micro-cell:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
+.micro-cell.cell-last::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 2px;
+  border: 1px solid var(--chalk-yellow);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.mark { width: 66%; height: 66%; overflow: visible; }
+.mark path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.mark-x path { stroke: var(--chalk-pink); stroke-width: 9; }
+.mark-o path { stroke: var(--chalk-blue); stroke-width: 8; }
+.mark path[data-draw] {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: chalk-draw 0.35s ease forwards;
+}
+@keyframes chalk-draw { to { stroke-dashoffset: 0; } }
+
+.overlay-won { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 20; pointer-events: none; }
+.stamp { width: 76%; height: 76%; }
+.stamp-ring { fill: none; stroke-width: 6; }
+
+.stamp-win-x .stamp-ring { stroke: var(--ink-red); }
+.stamp-win-x text { fill: var(--ink-red); }
+.stamp-win-o .stamp-ring { stroke: var(--ink-blue); }
+.stamp-win-o text { fill: var(--ink-blue); }
+
+.stamp-draw .stamp-ring { stroke: var(--ink-gray); }
+.stamp-draw text { fill: var(--ink-gray); }
+.stamp text { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+
+.chalk-btn {
+  font-family: 'Kalam', cursive;
+  font-weight: 700;
+  border-radius: 10px;
+  transition: filter 0.15s ease, transform 0.05s ease;
+}
+.chalk-btn:active { transform: scale(0.97); }
+.chalk-btn:focus-visible { outline: 2px solid var(--chalk); outline-offset: 2px; }
+
+.side-btn { padding: 0.6rem 0; font-size: 0.85rem; text-align: center; border-radius: 10px; border-width: 1px; border-style: solid; }
+.side-btn-x { color: var(--chalk-pink); border-color: var(--chalk-pink); background: rgba(240, 168, 160, 0.08); }
+.side-btn-x:hover { background: rgba(240, 168, 160, 0.18); }
+.side-btn-o { color: var(--chalk-blue); border-color: var(--chalk-blue); background: rgba(159, 211, 232, 0.08); }
+.side-btn-o:hover { background: rgba(159, 211, 232, 0.18); }
+.side-btn-y { color: var(--chalk-yellow); border-color: var(--chalk-yellow); background: rgba(232, 209, 122, 0.08); }
+.side-btn-y:hover { background: rgba(232, 209, 122, 0.18); }
+
+.btn-primary { background: var(--chalk-yellow); color: var(--wood-dark); }
+.btn-primary:hover { filter: brightness(1.08); }
+
+.mark-chip { font-family: 'JetBrains Mono', monospace; font-weight: 700; padding: 0.05rem 0.4rem; border-radius: 4px; border-width: 1px; border-style: solid; }
+.chip-x { color: var(--chalk-pink); border-color: var(--chalk-pink); }
+.chip-o { color: var(--chalk-blue); border-color: var(--chalk-blue); }
+
+.status-default { color: var(--chalk); }
+.status-active { color: var(--chalk-yellow); }
+.status-pending { color: var(--chalk-blue); animation: pulse 1.4s ease-in-out infinite; }
+.status-good { color: var(--chalk-blue); }
+.status-bad { color: var(--ink-red); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+/* Native select styling (used for Model Checkpoint — browser handles the
+   popover natively, so it can never get clipped or double-scrolled by a
+   parent container). */
+.select-wrap { position: relative; width: 100%; }
+.native-select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--tray-line);
+  color: var(--chalk);
+  border-radius: 8px;
+  padding: 0.6rem 2.1rem 0.6rem 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+.native-select:hover { border-color: var(--chalk-dim); }
+.native-select:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
+.native-select option { background: var(--tray); color: var(--chalk); }
+.select-wrap .select-caret {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--chalk-dim);
+}
+
+/* Theme swatch grid — every theme is visible at a glance with no nested
+   scrollbar, and hovering previews it live on the board because the drawer
+   never fully covers the board (see .settings-drawer below). */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.55rem;
+}
+.theme-card {
+  appearance: none;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--tray-line);
+  border-radius: 10px;
+  padding: 0.55rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+}
+.theme-card:hover, .theme-card:focus-visible {
+  border-color: var(--chalk-yellow);
+  background: rgba(0, 0, 0, 0.32);
+  transform: translateY(-1px);
+}
+.theme-card:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
+.theme-card.selected { border-color: var(--chalk-yellow); box-shadow: 0 0 0 1px var(--chalk-yellow) inset; }
+.theme-swatch-row {
+  display: flex;
+  gap: 3px;
+  height: 20px;
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+.theme-swatch-row span { flex: 1; }
+.theme-card-name {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.66rem;
+  line-height: 1.3;
+  color: var(--chalk-dim);
+}
+.theme-card.selected .theme-card-name { color: var(--chalk); }
+
+/* Toggle switch (used for Sound Effects) */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--tray-line);
+  border-radius: 9px;
+  padding: 0.65rem 0.85rem;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--chalk);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.toggle-row:hover { border-color: var(--chalk-dim); }
+.toggle-row:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
+.toggle-switch {
+  position: relative;
+  width: 38px;
+  height: 21px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+}
+.toggle-switch.on { background: var(--chalk-yellow); }
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.toggle-switch.on .toggle-knob { transform: translateX(17px); }
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--tray-line);
+  color: var(--chalk-dim);
+  border-radius: 9px;
+  padding: 0.5rem 0.7rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease, transform 0.2s ease;
+}
+.icon-btn:hover { color: var(--chalk); border-color: var(--chalk-dim); background: rgba(0, 0, 0, 0.32); }
+.icon-btn svg { transition: transform 0.4s ease; flex-shrink: 0; }
+.icon-btn:hover svg { transform: rotate(45deg); }
+.icon-btn:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
+.icon-btn.sound-btn:hover svg { transform: none; }
+.icon-btn.sound-btn.muted { color: var(--ink-red); }
+
+.active-model-note {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--chalk-dim);
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--tray-line);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.status-hint {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--chalk-yellow);
+  margin-top: -0.35rem;
+  margin-bottom: 0.5rem;
+  min-height: 1rem;
+}
+
+/* Settings drawer — docks to the right edge instead of sitting in a small
+   centered box. This is the fix for the reported UX problems:
+   1) Only ONE scroll container (.drawer-body), so there's never an outer
+      scrollbar plus an inner dropdown scrollbar to fight with.
+   2) It never fully covers the board and the backdrop is a plain dim with
+      no blur, so hovering a theme card to preview it actually works. */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 6, 5, 0.45);
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+
+.settings-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100dvh;
+  width: min(92vw, 380px);
+  background: var(--tray);
+  border-left: 1px solid var(--tray-line);
+  box-shadow: -20px 0 50px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.3s ease, border-color 0.3s ease;
+}
+.settings-drawer.open { transform: translateX(0); }
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.25rem 1rem;
+  border-bottom: 1px solid var(--tray-line);
+  flex-shrink: 0;
+}
+.drawer-header h2 {
+  font-family: 'Kalam', cursive;
+  font-weight: 700;
+  font-size: 1.3rem;
+  color: var(--chalk);
+}
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--chalk-dim);
+  cursor: pointer;
+  padding: 0.3rem;
+  border-radius: 6px;
+  line-height: 0;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.modal-close-btn:hover { color: var(--chalk); background: rgba(255, 255, 255, 0.06); }
+.modal-close-btn:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+.drawer-section + .drawer-section { margin-top: 1.3rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mark path[data-draw] { animation: none !important; stroke-dashoffset: 0 !important; }
+  * { transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; }
+}
+</style>
+</head>
+<body class="selection:bg-amber-500/30">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="chalk-rough" x="-30%" y="-30%" width="160%" height="160%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="4"/>
+    </filter>
+  </defs>
+</svg>
+
+<div class="app-shell">
+  <header class="flex items-center justify-between gap-3 px-5 pt-6 lg:px-8 lg:pt-8">
+    <div class="flex items-center gap-3 min-w-0">
+      <svg width="36" height="36" viewBox="0 0 100 100" aria-hidden="true" class="flex-shrink-0">
+        <rect width="100" height="100" rx="16" fill="var(--board-bg)"/>
+        <g stroke="var(--chalk)" stroke-width="6" stroke-linecap="round">
+          <line x1="34" y1="10" x2="34" y2="90"/>
+          <line x1="66" y1="10" x2="66" y2="90"/>
+          <line x1="10" y1="34" x2="90" y2="34"/>
+          <line x1="10" y1="66" x2="90" y2="66"/>
+        </g>
+        <g stroke="var(--chalk-pink)" stroke-width="7" stroke-linecap="round">
+          <line x1="45" y1="45" x2="55" y2="55"/>
+          <line x1="55" y1="45" x2="45" y2="55"/>
+        </g>
+        <circle cx="22" cy="22" r="7" fill="none" stroke="var(--chalk-blue)" stroke-width="6"/>
+      </svg>
+      <div class="min-w-0">
+        <h1 class="text-3xl sm:text-4xl font-bold tracking-tight" style="color:var(--chalk)">
+          Zero<span style="color:var(--chalk-yellow)">Cross</span>
+        </h1>
+        <p class="eyebrow mt-0.5 truncate">An AlphaZero-style engine, trained by self-play</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 flex-shrink-0">
+      <button type="button" class="icon-btn sound-btn" id="soundBtn" onclick="toggleSound()" aria-pressed="true" aria-label="Toggle sound effects">
+        <svg id="soundIconOn" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="4 9 8 9 12 5 12 19 8 15 4 15 4 9"/>
+          <path d="M17 8a5 5 0 0 1 0 8"/>
+          <path d="M19.5 5.5a9 9 0 0 1 0 13"/>
+        </svg>
+        <svg id="soundIconOff" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="hidden">
+          <polygon points="4 9 8 9 12 5 12 19 8 15 4 15 4 9"/>
+          <line x1="17" y1="9" x2="23" y2="15"/>
+          <line x1="23" y1="9" x2="17" y2="15"/>
+        </svg>
+        <span class="hidden sm:inline">Sound</span>
+      </button>
+      <button type="button" class="icon-btn" id="settingsBtn" onclick="openSettingsModal()" aria-haspopup="dialog" aria-controls="settingsModal">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span class="hidden sm:inline">Settings</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="content">
+    <aside class="flex flex-col gap-4 w-full lg:w-[340px] lg:flex-shrink-0">
+      <div class="tray-panel" id="controlPanel">
+        <span class="eyebrow block mb-3">Start a Game</span>
+        <div class="grid grid-cols-2 gap-2 transition-opacity duration-300 opacity-40 pointer-events-none" id="sideSelectContainer">
+          <button onclick="startGame(1)" class="chalk-btn side-btn side-btn-x">Play X</button>
+          <button onclick="startGame(-1)" class="chalk-btn side-btn side-btn-o">Play O</button>
+        </div>
+        <p class="eyebrow mt-2" style="text-transform:none; letter-spacing:0;">Whoever moves first is randomized each game.</p>
+        <div class="active-model-note">
+          <span class="flex-shrink-0">Engine:</span>
+          <span id="activeModelNote" class="truncate min-w-0">Searching…</span>
+        </div>
+      </div>
+
+      <div class="tray-panel">
+        <div class="flex items-center justify-between mb-1">
+          <span class="eyebrow">Status</span>
+          <span id="moveCount" class="mono text-xs" style="color:var(--chalk-dim)"></span>
+        </div>
+        <p id="statusMessage" class="text-lg font-bold h-7 flex items-center status-pending">Connecting…</p>
+        <p id="statusHint" class="status-hint hidden"></p>
+        <div id="rosterRow" class="mono text-xs mb-4" style="display:none; color:var(--chalk-dim)">
+          You <span id="rosterYouMark" class="mark-chip chip-x">X</span>
+          &nbsp;·&nbsp; Engine <span id="rosterAiMark" class="mark-chip chip-o">O</span>
+        </div>
+
+        <div class="space-y-1.5 mt-4">
+          <div class="flex justify-between items-end">
+            <span class="eyebrow">Position Read</span>
+            <span id="evalValue" class="mono text-xs font-bold" style="color:var(--chalk)">0.00</span>
+          </div>
+          <div class="w-full h-2.5 rounded-full overflow-hidden flex" style="background:rgba(0,0,0,.35); border:1px solid var(--tray-line)">
+            <div id="evalBarX" style="width:50%; background:var(--chalk-pink); transition:width .5s ease"></div>
+            <div id="evalBarO" style="width:50%; background:var(--chalk-blue); transition:width .5s ease"></div>
+          </div>
+          <div class="flex justify-between mono" style="font-size:.6rem; color:var(--chalk-dim)">
+            <span>O ahead</span><span>even</span><span>X ahead</span>
+          </div>
+        </div>
+      </div>
+
+      <button onclick="resetGame()" class="chalk-btn btn-primary w-full py-3.5 text-base">New Game</button>
+    </aside>
+
+    <section class="flex-1 flex items-center justify-center w-full min-h-0">
+      <div class="board-frame w-full max-w-[78vh] aspect-square">
+        <div id="board" class="board-grid w-full h-full"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="drawer-backdrop" id="settingsBackdrop" onclick="closeSettingsModal();"></div>
+<div class="settings-drawer" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+  <div class="drawer-header">
+    <h2 id="settingsModalTitle">Settings</h2>
+    <button type="button" class="modal-close-btn" onclick="closeSettingsModal()" aria-label="Close settings">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="drawer-body">
+    <div class="drawer-section">
+      <span class="eyebrow block mb-2">Model Checkpoint</span>
+      <div class="select-wrap">
+        <select id="modelSelect" class="native-select" onchange="selectModel(this.value)">
+          <option>Searching…</option>
+        </select>
+        <svg class="select-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <span class="eyebrow block mb-2">Interface Theme</span>
+      <div class="theme-grid" id="themeGrid"></div>
+      <p class="eyebrow mt-2" style="text-transform:none; letter-spacing:0;">Hover (or tap) a swatch to preview it on the board.</p>
+    </div>
+
+    <div class="drawer-section">
+      <span class="eyebrow block mb-2">Sound</span>
+      <button type="button" class="toggle-row" id="soundToggleRow" onclick="toggleSound()" aria-pressed="true">
+        <span>Sound effects</span>
+        <span class="toggle-switch on" id="soundSwitch"><span class="toggle-knob"></span></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+let board = new Array(81).fill(0);
+let macroStatus = new Array(9).fill(0);
+let activeGrid = -1;
+let humanPlayer = 1;
+let aiPlayer = -1;
+let currentTurn = 1;
+let gameActive = false;
+let lastMoveIdx = -1;
+let moveCount = 0;
+let currentLoadedModel = null;
+let freeMoveRule = false;
+
+// 10 Curated Dark Aesthetic Themes
+const themes = {
+  chalkWood: {
+    name: "Chalk & Wood (Default)",
+    vars: {
+      '--board-bg': '#1e332a',
+      '--board-bg-2': '#24392e',
+      '--wood': '#4d3826',
+      '--wood-dark': '#2f2116',
+      '--chalk': '#eef0e2',
+      '--chalk-dim': '#a9b3a2',
+      '--chalk-yellow': '#e8d17a',
+      '--chalk-pink': '#f0a8a0',
+      '--chalk-blue': '#9fd3e8',
+      '--ink-red': '#c1495a',
+      '--ink-blue': '#6a9fb5',
+      '--ink-gray': '#8a8f86',
+      '--tray': '#2a2118',
+      '--tray-line': 'rgba(238, 240, 226, 0.14)'
+    }
+  },
+  obsidianGold: {
+    name: "Obsidian & Gold",
+    vars: {
+      '--board-bg': '#111111',
+      '--board-bg-2': '#1a1a1a',
+      '--wood': '#1c1c1f',
+      '--wood-dark': '#09090b',
+      '--chalk': '#f5f5f5',
+      '--chalk-dim': '#7d7d7d',
+      '--chalk-yellow': '#fbbf24',
+      '--chalk-pink': '#f43f5e',
+      '--chalk-blue': '#38bdf8',
+      '--ink-red': '#e11d48',
+      '--ink-blue': '#0284c7',
+      '--ink-gray': '#52525b',
+      '--tray': '#0f0f11',
+      '--tray-line': 'rgba(255, 255, 255, 0.08)'
+    }
+  },
+  midnightCyber: {
+    name: "Midnight Cyber",
+    vars: {
+      '--board-bg': '#080c16',
+      '--board-bg-2': '#0f1423',
+      '--wood': '#111827',
+      '--wood-dark': '#030712',
+      '--chalk': '#f8fafc',
+      '--chalk-dim': '#6d7e96',
+      '--chalk-yellow': '#fde047',
+      '--chalk-pink': '#ec4899',
+      '--chalk-blue': '#06b6d4',
+      '--ink-red': '#be185d',
+      '--ink-blue': '#0369a1',
+      '--ink-gray': '#475569',
+      '--tray': '#090e1a',
+      '--tray-line': 'rgba(148, 163, 184, 0.12)'
+    }
+  },
+  graphiteNeon: {
+    name: "Graphite & Neon",
+    vars: {
+      '--board-bg': '#1c1c1e',
+      '--board-bg-2': '#27272a',
+      '--wood': '#2c2c30',
+      '--wood-dark': '#141415',
+      '--chalk': '#e4e4e7',
+      '--chalk-dim': '#a1a1aa',
+      '--chalk-yellow': '#ffd60a',
+      '--chalk-pink': '#ff453a',
+      '--chalk-blue': '#0a84ff',
+      '--ink-red': '#d70015',
+      '--ink-blue': '#0066cc',
+      '--ink-gray': '#636366',
+      '--tray': '#18181b',
+      '--tray-line': 'rgba(255, 255, 255, 0.12)'
+    }
+  },
+  deepCharcoal: {
+    name: "Deep Charcoal & Mint",
+    vars: {
+      '--board-bg': '#121417',
+      '--board-bg-2': '#181b20',
+      '--wood': '#1e2229',
+      '--wood-dark': '#0b0d10',
+      '--chalk': '#ecfdf5',
+      '--chalk-dim': '#94a3b8',
+      '--chalk-yellow': '#34d399',
+      '--chalk-pink': '#f43f5e',
+      '--chalk-blue': '#38bdf8',
+      '--ink-red': '#e11d48',
+      '--ink-blue': '#0284c7',
+      '--ink-gray': '#64748b',
+      '--tray': '#0e1013',
+      '--tray-line': 'rgba(255, 255, 255, 0.07)'
+    }
+  },
+  matteSlate: {
+    name: "Matte Slate & Amber",
+    vars: {
+      '--board-bg': '#16181c',
+      '--board-bg-2': '#1e2127',
+      '--wood': '#262a33',
+      '--wood-dark': '#0f1115',
+      '--chalk': '#f3f4f6',
+      '--chalk-dim': '#9ca3af',
+      '--chalk-yellow': '#f59e0b',
+      '--chalk-pink': '#fb7185',
+      '--chalk-blue': '#60a5fa',
+      '--ink-red': '#be123c',
+      '--ink-blue': '#1d4ed8',
+      '--ink-gray': '#4b5563',
+      '--tray': '#111317',
+      '--tray-line': 'rgba(255, 255, 255, 0.09)'
+    }
+  },
+  pitchBlack: {
+    name: "Pitch Black & Ultraviolet",
+    vars: {
+      '--board-bg': '#050507',
+      '--board-bg-2': '#0b0b10',
+      '--wood': '#13131c',
+      '--wood-dark': '#020204',
+      '--chalk': '#fafafa',
+      '--chalk-dim': '#787882',
+      '--chalk-yellow': '#c084fc',
+      '--chalk-pink': '#f43f5e',
+      '--chalk-blue': '#38bdf8',
+      '--ink-red': '#e11d48',
+      '--ink-blue': '#0284c7',
+      '--ink-gray': '#52525b',
+      '--tray': '#07070a',
+      '--tray-line': 'rgba(255, 255, 255, 0.06)'
+    }
+  },
+  crimsonMatrix: {
+    name: "Crimson Matrix",
+    vars: {
+      '--board-bg': '#12080a',
+      '--board-bg-2': '#1a0e10',
+      '--wood': '#241215',
+      '--wood-dark': '#080304',
+      '--chalk': '#fff1f2',
+      '--chalk-dim': '#fda4af',
+      '--chalk-yellow': '#f0a94e',
+      '--chalk-pink': '#f43f5e',
+      '--chalk-blue': '#38bdf8',
+      '--ink-red': '#e11d48',
+      '--ink-blue': '#0284c7',
+      '--ink-gray': '#713f12',
+      '--tray': '#0d0507',
+      '--tray-line': 'rgba(244, 63, 94, 0.12)'
+    }
+  },
+  emeraldTerminal: {
+    name: "Emerald Terminal",
+    vars: {
+      '--board-bg': '#061510',
+      '--board-bg-2': '#0b241c',
+      '--wood': '#11352a',
+      '--wood-dark': '#030a07',
+      '--chalk': '#ecfdf5',
+      '--chalk-dim': '#6ee7b7',
+      '--chalk-yellow': '#34d399',
+      '--chalk-pink': '#f43f5e',
+      '--chalk-blue': '#38bdf8',
+      '--ink-red': '#e11d48',
+      '--ink-blue': '#0284c7',
+      '--ink-gray': '#065f46',
+      '--tray': '#040d0a',
+      '--tray-line': 'rgba(52, 211, 153, 0.12)'
+    }
+  },
+  cyberpunkAmber: {
+    name: "Cyberpunk Amber",
+    vars: {
+      '--board-bg': '#140c04',
+      '--board-bg-2': '#211406',
+      '--wood': '#301c08',
+      '--wood-dark': '#080502',
+      '--chalk': '#fffbeb',
+      '--chalk-dim': '#fcd34d',
+      '--chalk-yellow': '#fbbf24',
+      '--chalk-pink': '#fb7185',
+      '--chalk-blue': '#38bdf8',
+      '--ink-red': '#e11d48',
+      '--ink-blue': '#0284c7',
+      '--ink-gray': '#78350f',
+      '--tray': '#0d0803',
+      '--tray-line': 'rgba(251, 191, 36, 0.12)'
+    }
+  }
+};
+
+// ---------------------------------------------------------------------
+// Sound Engine — everything is synthesized with the Web Audio API so
+// there are no audio files to host or load. Preference is remembered
+// in localStorage (this is a real deployed app, not a sandboxed preview,
+// so persisting across visits is safe and expected here).
+// ---------------------------------------------------------------------
+const SoundFX = (() => {
+  let ctx = null;
+  let enabled = localStorage.getItem('zc_sound') !== 'off';
+
+  function ensureCtx() {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) ctx = new AC();
+    }
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  function tone({ freq = 440, duration = 0.12, type = 'sine', gain = 0.16, delay = 0, glideTo = null }) {
+    if (!enabled) return;
+    const ac = ensureCtx();
+    if (!ac) return;
+    const t0 = ac.currentTime + delay;
+    const osc = ac.createOscillator();
+    const amp = ac.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, t0 + duration * 0.8);
+    amp.gain.setValueAtTime(0.0001, t0);
+    amp.gain.linearRampToValueAtTime(gain, t0 + 0.008);
+    amp.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    osc.connect(amp).connect(ac.destination);
+    osc.start(t0);
+    osc.stop(t0 + duration + 0.02);
+  }
+
+  function noiseBurst({ duration = 0.14, gain = 0.1, delay = 0, filterFreq = 1000 }) {
+    if (!enabled) return;
+    const ac = ensureCtx();
+    if (!ac) return;
+    const t0 = ac.currentTime + delay;
+    const bufferSize = Math.max(1, Math.floor(ac.sampleRate * duration));
+    const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    const src = ac.createBufferSource();
+    src.buffer = buffer;
+    const filt = ac.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.frequency.value = filterFreq;
+    const amp = ac.createGain();
+    amp.gain.value = gain;
+    src.connect(filt).connect(amp).connect(ac.destination);
+    src.start(t0);
+  }
+
+  return {
+    isEnabled: () => enabled,
+    setEnabled(v) {
+      enabled = v;
+      localStorage.setItem('zc_sound', v ? 'on' : 'off');
+    },
+    unlock() { ensureCtx(); },
+    click()      { tone({ freq: 720, duration: 0.05, type: 'square', gain: 0.045 }); },
+    moveHuman()  { tone({ freq: 520, duration: 0.09, type: 'sine', gain: 0.16 }); tone({ freq: 780, duration: 0.05, type: 'sine', gain: 0.06, delay: 0.02 }); },
+    moveAI()     { tone({ freq: 300, duration: 0.12, type: 'triangle', gain: 0.16 }); },
+    microWin()   { tone({ freq: 200, duration: 0.18, type: 'sawtooth', gain: 0.1 }); noiseBurst({ duration: 0.12, gain: 0.07, filterFreq: 900 }); },
+    gameWin()    { [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone({ freq: f, duration: 0.32, type: 'triangle', gain: 0.14, delay: i * 0.09 })); },
+    gameLose()   { [400, 340, 260, 180].forEach((f, i) => tone({ freq: f, duration: 0.28, type: 'sawtooth', gain: 0.12, delay: i * 0.1 })); },
+    gameDraw()   { tone({ freq: 340, duration: 0.22, type: 'sine', gain: 0.12 }); tone({ freq: 340, duration: 0.22, type: 'sine', gain: 0.1, delay: 0.16 }); },
+    drawerOpen() { tone({ freq: 480, duration: 0.09, type: 'sine', gain: 0.05, glideTo: 720 }); },
+    drawerClose(){ tone({ freq: 720, duration: 0.09, type: 'sine', gain: 0.05, glideTo: 460 }); }
+  };
+})();
+
+// Browsers block audio until a user gesture — unlock on the first tap/click.
+window.addEventListener('pointerdown', () => SoundFX.unlock(), { once: true });
+
+function toggleSound() {
+  const next = !SoundFX.isEnabled();
+  SoundFX.setEnabled(next);
+  if (next) SoundFX.click();
+  syncSoundUI();
+}
+
+function syncSoundUI() {
+  const on = SoundFX.isEnabled();
+  document.getElementById('soundIconOn').classList.toggle('hidden', !on);
+  document.getElementById('soundIconOff').classList.toggle('hidden', on);
+  document.getElementById('soundBtn').classList.toggle('muted', !on);
+  document.getElementById('soundBtn').setAttribute('aria-pressed', String(on));
+  const sw = document.getElementById('soundSwitch');
+  sw.classList.toggle('on', on);
+  document.getElementById('soundToggleRow').setAttribute('aria-pressed', String(on));
+}
+
+let activeThemeKey = localStorage.getItem('zc_theme') && themes[localStorage.getItem('zc_theme')]
+  ? localStorage.getItem('zc_theme')
+  : 'chalkWood';
+
+function applyThemeVariables(vars) {
+  const root = document.documentElement;
+  for (const [prop, val] of Object.entries(vars)) {
+    root.style.setProperty(prop, val);
+  }
+}
+
+function previewTheme(key) {
+  if (themes[key]) {
+    applyThemeVariables(themes[key].vars);
+  }
+}
+
+function revertPreview() {
+  applyThemeVariables(themes[activeThemeKey].vars);
+}
+
+function selectTheme(key) {
+  if (!themes[key]) return;
+  activeThemeKey = key;
+  localStorage.setItem('zc_theme', key);
+  applyThemeVariables(themes[key].vars);
+  updateThemeGridSelection();
+  SoundFX.click();
+}
+
+function openSettingsModal() {
+  document.getElementById('settingsBackdrop').classList.add('open');
+  document.getElementById('settingsModal').classList.add('open');
+  SoundFX.drawerOpen();
+}
+
+function closeSettingsModal() {
+  revertPreview();
+  document.getElementById('settingsBackdrop').classList.remove('open');
+  document.getElementById('settingsModal').classList.remove('open');
+  SoundFX.drawerClose();
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('settingsModal').classList.contains('open')) {
+    closeSettingsModal();
+  }
+});
+
+async function selectModel(filename) {
+  if (!filename || filename === currentLoadedModel) return;
+  SoundFX.click();
+  await switchModelFile(filename);
+}
+
+function updateActiveModelNote(filename) {
+  const el = document.getElementById('activeModelNote');
+  if (el) el.textContent = filename || '—';
+}
+
+async function switchModelFile(filename) {
+  updateStatus(`Loading ${filename}…`, 'pending');
+  document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
+
+  try {
+    await fetch('/load', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({filename})
+    });
+    currentLoadedModel = filename;
+    const select = document.getElementById('modelSelect');
+    if (select) select.value = filename;
+    updateActiveModelNote(filename);
+    if (!gameActive) enableControls();
+  } catch (err) {
+    updateStatus("Couldn't load that checkpoint.", 'bad');
+    enableControls();
+  }
+}
+
+// Every theme is rendered as a swatch card up front — nothing to scroll
+// through or expand, and hovering previews it live since the drawer
+// doesn't cover the whole board.
+function initThemeGrid() {
+  const grid = document.getElementById('themeGrid');
+  grid.innerHTML = '';
+  for (const [key, theme] of Object.entries(themes)) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'theme-card' + (key === activeThemeKey ? ' selected' : '');
+    card.setAttribute('data-key', key);
+    card.setAttribute('aria-pressed', key === activeThemeKey ? 'true' : 'false');
+    const v = theme.vars;
+    card.innerHTML = `
+      <span class="theme-swatch-row">
+        <span style="background:${v['--board-bg']}"></span>
+        <span style="background:${v['--chalk-yellow']}"></span>
+        <span style="background:${v['--chalk-pink']}"></span>
+        <span style="background:${v['--chalk-blue']}"></span>
+      </span>
+      <span class="theme-card-name">${theme.name}</span>
+    `;
+    card.onmouseenter = () => previewTheme(key);
+    card.onmouseleave = () => revertPreview();
+    card.onfocus = () => previewTheme(key);
+    card.onblur = () => revertPreview();
+    card.onclick = () => selectTheme(key);
+    grid.appendChild(card);
+  }
+}
+
+function updateThemeGridSelection() {
+  document.querySelectorAll('#themeGrid .theme-card').forEach(card => {
+    const isSelected = card.getAttribute('data-key') === activeThemeKey;
+    card.classList.toggle('selected', isSelected);
+    card.setAttribute('aria-pressed', String(isSelected));
+  });
+}
+
+function seededJitter(seed, spread) {
+  const x = Math.sin(seed * 999.7) * 10000;
+  const frac = x - Math.floor(x);
+  return (frac - 0.5) * spread;
+}
+
+function markMarkup(type, idx) {
+  const rot = seededJitter(idx + 1, 10).toFixed(1);
+  if (type === 1) {
+    const j = n => seededJitter(idx + n, 6);
+    return `<svg class="mark mark-x" viewBox="0 0 100 100" style="transform:rotate(${rot}deg)">
+      <path data-draw pathLength="1" filter="url(#chalk-rough)" d="M ${18 + j(1)} ${20 + j(2)} Q 50 48 ${82 + j(3)} ${80 + j(4)}"/>
+      <path data-draw pathLength="1" filter="url(#chalk-rough)" d="M ${82 + j(5)} ${22 + j(6)} Q 50 48 ${16 + j(7)} ${78 + j(8)}"/>
+    </svg>`;
+  }
+  const j = n => seededJitter(idx + n, 3);
+  return `<svg class="mark mark-o" viewBox="0 0 100 100" style="transform:rotate(${rot}deg)">
+    <path data-draw pathLength="1" filter="url(#chalk-rough)" d="M ${52 + j(1)} 14
+      C 30 14 14 30 14 50
+      C 14 71 31 87 51 86
+      C 72 86 87 70 86 49
+      C 86 30 71 15 ${51 + j(2)} 14
+      C ${47 + j(3)} 14 44 15 ${41 + j(4)} 16"/>
+  </svg>`;
+}
+
+function stampMarkup(status, macroIdx) {
+  const rot = seededJitter(macroIdx + 50, 10).toFixed(1);
+  if (status === 2) {
+    return `<svg class="stamp stamp-draw" viewBox="0 0 100 100" style="transform:rotate(${rot}deg)">
+      <circle class="stamp-ring" cx="50" cy="50" r="40" filter="url(#chalk-rough)"/>
+      <text x="50" y="59" text-anchor="middle" font-size="34">–</text>
+    </svg>`;
+  }
+  const letter = status === 1 ? 'X' : 'O';
+  const winClass = status === 1 ? 'stamp-win-x' : 'stamp-win-o';
+  
+  return `<svg class="stamp ${winClass}" viewBox="0 0 100 100" style="transform:rotate(${rot}deg)">
+    <circle class="stamp-ring" cx="50" cy="50" r="40" filter="url(#chalk-rough)"/>
+    <text x="50" y="61" text-anchor="middle" font-size="38">${letter}</text>
+  </svg>`;
+}
+
+async function fetchModels() {
+  try {
+    const res = await fetch('/models?t=' + new Date().getTime());
+    const data = await res.json();
+    const models = data.models || [];
+    currentLoadedModel = data.current;
+
+    const select = document.getElementById('modelSelect');
+    select.innerHTML = '';
+
+    if (models.length === 0) {
+      const opt = document.createElement('option');
+      opt.textContent = 'No checkpoints found';
+      select.appendChild(opt);
+      updateActiveModelNote('no checkpoints found');
+      updateStatus('No checkpoints found on the server.', 'bad');
+      return;
+    }
+
+    if (!currentLoadedModel && models.length > 0) {
+      currentLoadedModel = models[0];
+    }
+
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.textContent = m;
+      opt.value = m;
+      select.appendChild(opt);
+    });
+
+    if (currentLoadedModel) {
+      select.value = currentLoadedModel;
+      updateActiveModelNote(currentLoadedModel);
+      await switchModelFile(currentLoadedModel);
+    }
+  } catch (err) {
+    console.error('Failed to fetch models', err);
+    updateStatus('Lost connection to the engine.', 'bad');
+  }
+}
+
+function enableControls() {
+  updateStatus('Ready — pick a side.', 'good');
+  document.getElementById('sideSelectContainer').classList.remove('opacity-40', 'pointer-events-none');
+}
+
+function createBoard() {
+  const boardElem = document.getElementById('board');
+  boardElem.innerHTML = '';
+
+  for (let m = 0; m < 9; m++) {
+    const macroElem = document.createElement('div');
+    macroElem.id = `macro-${m}`;
+    macroElem.className = 'macro-grid';
+
+    const overlay = document.createElement('div');
+    overlay.id = `macro-overlay-${m}`;
+    overlay.className = 'overlay-won hidden';
+    macroElem.appendChild(overlay);
+
+    for (let u = 0; u < 9; u++) {
+      const idx = m * 9 + u;
+      const cellElem = document.createElement('button');
+      cellElem.id = `cell-${idx}`;
+      cellElem.type = 'button';
+      cellElem.className = 'micro-cell';
+      cellElem.setAttribute('aria-label', `Cell ${idx + 1}`);
+      cellElem.onclick = () => handleHumanMove(m, u);
+      macroElem.appendChild(cellElem);
+    }
+    boardElem.appendChild(macroElem);
+  }
+}
+
+function startGame(playerSide) {
+  humanPlayer = playerSide;
+  aiPlayer = -playerSide;
+  resetGameState();
+  // First move is always a coin flip, independent of which symbol was chosen.
+  currentTurn = Math.random() < 0.5 ? 1 : -1;
+  gameActive = true;
+  document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
+  updateRoster();
+  SoundFX.click();
+
+  if (currentTurn === aiPlayer) {
+    updateStatus('Engine is thinking…', 'pending');
+    triggerAIMove();
+  } else {
+    updateStatus('Your move.', 'active');
+  }
+  updateBoardUI();
+}
+
+function resetGame() {
+  resetGameState();
+  updateBoardUI();
+  updateEvalBar(0);
+  enableControls();
+  document.getElementById('rosterRow').style.display = 'none';
+  SoundFX.click();
+}
+
+function resetGameState() {
+  board.fill(0);
+  macroStatus.fill(0);
+  activeGrid = -1;
+  currentTurn = 1;
+  gameActive = false;
+  lastMoveIdx = -1;
+  moveCount = 0;
+  freeMoveRule = false;
+  updateMoveCount();
+}
+
+function updateMoveCount() {
+  const el = document.getElementById('moveCount');
+  if (el) el.textContent = moveCount > 0 ? `Move ${moveCount}` : '';
+}
+
+function updateRoster() {
+  const you = document.getElementById('rosterYouMark');
+  const ai = document.getElementById('rosterAiMark');
+  you.textContent = humanPlayer === 1 ? 'X' : 'O';
+  you.className = 'mark-chip ' + (humanPlayer === 1 ? 'chip-x' : 'chip-o');
+  ai.textContent = aiPlayer === 1 ? 'X' : 'O';
+  ai.className = 'mark-chip ' + (aiPlayer === 1 ? 'chip-x' : 'chip-o');
+  document.getElementById('rosterRow').style.display = 'block';
+}
+
+function updateBoardUI() {
+  updateHint();
+  for (let m = 0; m < 9; m++) {
+    const macroElem = document.getElementById(`macro-${m}`);
+    const overlay = document.getElementById(`macro-overlay-${m}`);
+
+    let isMacroActive = false;
+    if (gameActive && macroStatus[m] === 0) {
+      if (activeGrid === -1 || activeGrid === m) isMacroActive = true;
+    }
+
+    let macroClass = 'macro-grid';
+    if (isMacroActive && currentTurn === humanPlayer) {
+      macroClass += ' macro-active';
+    } else if (gameActive && !isMacroActive && macroStatus[m] === 0) {
+      macroClass += ' macro-inactive';
+    }
+    macroElem.className = macroClass;
+
+    if (macroStatus[m] !== 0) {
+      if (overlay.dataset.rendered !== String(macroStatus[m])) {
+        overlay.innerHTML = stampMarkup(macroStatus[m], m);
+        overlay.dataset.rendered = String(macroStatus[m]);
+      }
+      overlay.classList.remove('hidden');
+    } else {
+      overlay.classList.add('hidden');
+      overlay.innerHTML = '';
+      overlay.dataset.rendered = '';
+    }
+
+    for (let u = 0; u < 9; u++) {
+      const idx = m * 9 + u;
+      const cellElem = document.getElementById(`cell-${idx}`);
+      const val = board[idx];
+
+      let cellClass = 'micro-cell';
+      if (idx === lastMoveIdx) cellClass += ' cell-last';
+
+      if (val !== 0) {
+        if (!cellElem.dataset.rendered) {
+          cellElem.innerHTML = markMarkup(val, idx);
+          cellElem.dataset.rendered = '1';
+        }
+        cellElem.disabled = true;
+      } else {
+        if (cellElem.dataset.rendered) {
+          cellElem.innerHTML = '';
+          cellElem.dataset.rendered = '';
+        }
+        cellElem.disabled = !gameActive || !isMacroActive || currentTurn !== humanPlayer;
+      }
+      cellElem.className = cellClass;
+    }
+  }
+}
+
+async function handleHumanMove(macro, micro) {
+  if (!gameActive || currentTurn !== humanPlayer) return;
+  const idx = macro * 9 + micro;
+
+  if (board[idx] !== 0 || macroStatus[macro] !== 0) return;
+  if (activeGrid !== -1 && activeGrid !== macro) return;
+
+  makeMove(idx, humanPlayer);
+
+  if (checkGameOver()) return;
+
+  currentTurn = aiPlayer;
+  updateStatus('Engine is thinking…', 'pending');
+  updateBoardUI();
+  await triggerAIMove();
+}
+
+async function triggerAIMove() {
+  try {
+    const res = await fetch('/move', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ board: board, active_grid: activeGrid, simulations: 50 })
+    });
+
+    const data = await res.json();
+    if (data.move !== -1) {
+      makeMove(data.move, aiPlayer);
+      if (data.value !== undefined) {
+        updateEvalBar(data.value);
+      }
+    }
+
+    if (!checkGameOver()) {
+      currentTurn = humanPlayer;
+      updateStatus('Your move.', 'active');
+      updateBoardUI();
+    }
+  } catch (err) {
+    console.error('AI move request failed', err);
+    updateStatus('Lost connection to the engine.', 'bad');
+  }
+}
+
+function makeMove(idx, player) {
+  board[idx] = player;
+  lastMoveIdx = idx;
+  moveCount++;
+  updateMoveCount();
+
+  if (player === humanPlayer) SoundFX.moveHuman(); else SoundFX.moveAI();
+
+  const macro = Math.floor(idx / 9);
+  const micro = idx % 9;
+
+  const wasDecided = macroStatus[macro] !== 0;
+  const microGrid = board.slice(macro * 9, macro * 9 + 9);
+  macroStatus[macro] = checkSubGridWin(microGrid);
+  if (!wasDecided && macroStatus[macro] !== 0) SoundFX.microWin();
+
+  freeMoveRule = false;
+  if (macroStatus[macro] !== 0) {
+    // The board just played in is now decided — the next player is free.
+    activeGrid = -1;
+  } else if (macroStatus[micro] !== 0) {
+    // Ultimate Tic-Tac-Toe free-move rule: this move sends the opponent to
+    // a board that is already won or full, so instead of locking them out
+    // (the bug that made the game get stuck), they get to play anywhere.
+    activeGrid = -1;
+    freeMoveRule = true;
+  } else {
+    activeGrid = micro;
+  }
+}
+
+function checkSubGridWin(grid) {
+  const patterns = [
+    [0,1,2],[3,4,5],[6,7,8],
+    [0,3,6],[1,4,7],[2,5,8],
+    [0,4,8],[2,4,6]
+  ];
+  for (let p of patterns) {
+    if (grid[p[0]] !== 0 && grid[p[0]] !== 2 && grid[p[0]] === grid[p[1]] && grid[p[1]] === grid[p[2]]) {
+      return grid[p[0]];
+    }
+  }
+  if (grid.every(c => c !== 0)) return 2;
+  return 0;
+}
+
+function checkGameOver() {
+  const winner = checkSubGridWin(macroStatus);
+  if (winner !== 0) {
+    gameActive = false;
+    if (winner === humanPlayer) { updateStatus('You won this one.', 'good'); SoundFX.gameWin(); }
+    else if (winner === aiPlayer) { updateStatus('Engine won this one.', 'bad'); SoundFX.gameLose(); }
+    else { updateStatus("Board's full — a draw.", 'default'); SoundFX.gameDraw(); }
+    updateBoardUI();
+    return true;
+  }
+  return false;
+}
+
+function updateHint() {
+  const el = document.getElementById('statusHint');
+  if (!el) return;
+  if (gameActive && freeMoveRule && currentTurn === humanPlayer) {
+    el.textContent = 'Sent to a finished board — play anywhere open.';
+    el.classList.remove('hidden');
+  } else {
+    el.textContent = '';
+    el.classList.add('hidden');
+  }
+}
+
+function updateStatus(msg, kind = 'default') {
+  const el = document.getElementById('statusMessage');
+  el.textContent = msg;
+  el.className = 'text-lg font-bold h-7 flex items-center status-' + kind;
+}
+
+function updateEvalBar(val) {
+  const valElem = document.getElementById('evalValue');
+  valElem.textContent = val > 0 ? `+${val.toFixed(2)}` : val.toFixed(2);
+  const xPercent = Math.min(100, Math.max(0, ((val + 1) / 2) * 100));
+  document.getElementById('evalBarX').style.width = `${xPercent}%`;
+  document.getElementById('evalBarO').style.width = `${100 - xPercent}%`;
+}
+
+window.onload = async () => {
+  applyThemeVariables(themes[activeThemeKey].vars);
+  initThemeGrid();
+  syncSoundUI();
+  createBoard();
+  updateMoveCount();
+  await fetchModels();
+};
+</script>
+</body>
+</html>
