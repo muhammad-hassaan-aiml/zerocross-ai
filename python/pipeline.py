@@ -126,7 +126,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         if do_generate:
             print("\n[1/4] Generating Batched Self Play Data")
             gen_start = time.time()
-            worker = SelfPlayWorker(best_net, num_concurrent_games=concurrent_games, mcts_simulations=mcts_sims, temperature_moves=30)
+            worker = SelfPlayWorker(best_net, num_concurrent_games=concurrent_games, mcts_simulations=mcts_sims, temperature_moves=45)
             new_samples = worker.generate_data(total_games_to_play=games_per_iteration)
             gen_duration = time.time() - gen_start
             aug_duration = worker.total_augmentation_time
