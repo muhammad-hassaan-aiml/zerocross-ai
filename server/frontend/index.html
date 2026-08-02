@@ -453,7 +453,7 @@ body {
         <h1 class="text-3xl sm:text-4xl font-bold tracking-tight" style="color:var(--chalk)">
           Zero<span style="color:var(--chalk-yellow)">Cross</span>
         </h1>
-        <p class="eyebrow mt-0.5 truncate">An AlphaZero-style engine, trained by self-play</p>
+        <p class="eyebrow mt-0.5 truncate">A self-taught neural network powered by reinforcement learning</p>
       </div>
     </div>
     <div class="flex items-center gap-2 flex-shrink-0">
@@ -483,12 +483,12 @@ body {
   <main class="content">
     <aside class="flex flex-col gap-4 w-full lg:w-[340px] lg:flex-shrink-0">
       <div class="tray-panel" id="controlPanel">
-        <span class="eyebrow block mb-3">Start a Game</span>
+        <span class="eyebrow block mb-3">Choose Your Side</span>
         <div class="grid grid-cols-2 gap-2 transition-opacity duration-300 opacity-40 pointer-events-none" id="sideSelectContainer">
-          <button onclick="startGame(1)" class="chalk-btn side-btn side-btn-x">Play X</button>
-          <button onclick="startGame(-1)" class="chalk-btn side-btn side-btn-o">Play O</button>
+          <button onclick="startGame('X')" class="chalk-btn side-btn side-btn-x">Play X</button>
+          <button onclick="startGame('O')" class="chalk-btn side-btn side-btn-o">Play O</button>
         </div>
-        <p class="eyebrow mt-2" style="text-transform:none; letter-spacing:0;">Whoever moves first is randomized each game.</p>
+        <p class="eyebrow mt-2" style="text-transform:none; letter-spacing:0;">Coin toss decides who opens the board.</p>
         <div class="active-model-note">
           <span class="flex-shrink-0">Engine:</span>
           <span id="activeModelNote" class="truncate min-w-0">Searching…</span>
@@ -517,7 +517,7 @@ body {
             <div id="evalBarO" style="width:50%; background:var(--chalk-blue); transition:width .5s ease"></div>
           </div>
           <div class="flex justify-between mono" style="font-size:.6rem; color:var(--chalk-dim)">
-            <span>O ahead</span><span>even</span><span>X ahead</span>
+            <span>X ahead</span><span>even</span><span>O ahead</span>
           </div>
         </div>
       </div>
@@ -573,8 +573,13 @@ body {
 let board = new Array(81).fill(0);
 let macroStatus = new Array(9).fill(0);
 let activeGrid = -1;
-let humanPlayer = 1;
-let aiPlayer = -1;
+
+// Decouple the internal player math from the visual symbols
+let humanInternal = 1;
+let aiInternal = -1;
+let humanSymbol = 'X';
+let aiSymbol = 'O';
+
 let currentTurn = 1;
 let gameActive = false;
 let lastMoveIdx = -1;
@@ -587,201 +592,95 @@ const themes = {
   chalkWood: {
     name: "Chalk & Wood (Default)",
     vars: {
-      '--board-bg': '#1e332a',
-      '--board-bg-2': '#24392e',
-      '--wood': '#4d3826',
-      '--wood-dark': '#2f2116',
-      '--chalk': '#eef0e2',
-      '--chalk-dim': '#a9b3a2',
-      '--chalk-yellow': '#e8d17a',
-      '--chalk-pink': '#f0a8a0',
-      '--chalk-blue': '#9fd3e8',
-      '--ink-red': '#c1495a',
-      '--ink-blue': '#6a9fb5',
-      '--ink-gray': '#8a8f86',
-      '--tray': '#2a2118',
-      '--tray-line': 'rgba(238, 240, 226, 0.14)'
+      '--board-bg': '#1e332a', '--board-bg-2': '#24392e', '--wood': '#4d3826', '--wood-dark': '#2f2116',
+      '--chalk': '#eef0e2', '--chalk-dim': '#a9b3a2', '--chalk-yellow': '#e8d17a', '--chalk-pink': '#f0a8a0',
+      '--chalk-blue': '#9fd3e8', '--ink-red': '#c1495a', '--ink-blue': '#6a9fb5', '--ink-gray': '#8a8f86',
+      '--tray': '#2a2118', '--tray-line': 'rgba(238, 240, 226, 0.14)'
     }
   },
   obsidianGold: {
     name: "Obsidian & Gold",
     vars: {
-      '--board-bg': '#111111',
-      '--board-bg-2': '#1a1a1a',
-      '--wood': '#1c1c1f',
-      '--wood-dark': '#09090b',
-      '--chalk': '#f5f5f5',
-      '--chalk-dim': '#7d7d7d',
-      '--chalk-yellow': '#fbbf24',
-      '--chalk-pink': '#f43f5e',
-      '--chalk-blue': '#38bdf8',
-      '--ink-red': '#e11d48',
-      '--ink-blue': '#0284c7',
-      '--ink-gray': '#52525b',
-      '--tray': '#0f0f11',
-      '--tray-line': 'rgba(255, 255, 255, 0.08)'
+      '--board-bg': '#111111', '--board-bg-2': '#1a1a1a', '--wood': '#1c1c1f', '--wood-dark': '#09090b',
+      '--chalk': '#f5f5f5', '--chalk-dim': '#7d7d7d', '--chalk-yellow': '#fbbf24', '--chalk-pink': '#f43f5e',
+      '--chalk-blue': '#38bdf8', '--ink-red': '#e11d48', '--ink-blue': '#0284c7', '--ink-gray': '#52525b',
+      '--tray': '#0f0f11', '--tray-line': 'rgba(255, 255, 255, 0.08)'
     }
   },
   midnightCyber: {
     name: "Midnight Cyber",
     vars: {
-      '--board-bg': '#080c16',
-      '--board-bg-2': '#0f1423',
-      '--wood': '#111827',
-      '--wood-dark': '#030712',
-      '--chalk': '#f8fafc',
-      '--chalk-dim': '#6d7e96',
-      '--chalk-yellow': '#fde047',
-      '--chalk-pink': '#ec4899',
-      '--chalk-blue': '#06b6d4',
-      '--ink-red': '#be185d',
-      '--ink-blue': '#0369a1',
-      '--ink-gray': '#475569',
-      '--tray': '#090e1a',
-      '--tray-line': 'rgba(148, 163, 184, 0.12)'
+      '--board-bg': '#080c16', '--board-bg-2': '#0f1423', '--wood': '#111827', '--wood-dark': '#030712',
+      '--chalk': '#f8fafc', '--chalk-dim': '#6d7e96', '--chalk-yellow': '#fde047', '--chalk-pink': '#ec4899',
+      '--chalk-blue': '#06b6d4', '--ink-red': '#be185d', '--ink-blue': '#0369a1', '--ink-gray': '#475569',
+      '--tray': '#090e1a', '--tray-line': 'rgba(148, 163, 184, 0.12)'
     }
   },
   graphiteNeon: {
     name: "Graphite & Neon",
     vars: {
-      '--board-bg': '#1c1c1e',
-      '--board-bg-2': '#27272a',
-      '--wood': '#2c2c30',
-      '--wood-dark': '#141415',
-      '--chalk': '#e4e4e7',
-      '--chalk-dim': '#a1a1aa',
-      '--chalk-yellow': '#ffd60a',
-      '--chalk-pink': '#ff453a',
-      '--chalk-blue': '#0a84ff',
-      '--ink-red': '#d70015',
-      '--ink-blue': '#0066cc',
-      '--ink-gray': '#636366',
-      '--tray': '#18181b',
-      '--tray-line': 'rgba(255, 255, 255, 0.12)'
+      '--board-bg': '#1c1c1e', '--board-bg-2': '#27272a', '--wood': '#2c2c30', '--wood-dark': '#141415',
+      '--chalk': '#e4e4e7', '--chalk-dim': '#a1a1aa', '--chalk-yellow': '#ffd60a', '--chalk-pink': '#ff453a',
+      '--chalk-blue': '#0a84ff', '--ink-red': '#d70015', '--ink-blue': '#0066cc', '--ink-gray': '#636366',
+      '--tray': '#18181b', '--tray-line': 'rgba(255, 255, 255, 0.12)'
     }
   },
   deepCharcoal: {
     name: "Deep Charcoal & Mint",
     vars: {
-      '--board-bg': '#121417',
-      '--board-bg-2': '#181b20',
-      '--wood': '#1e2229',
-      '--wood-dark': '#0b0d10',
-      '--chalk': '#ecfdf5',
-      '--chalk-dim': '#94a3b8',
-      '--chalk-yellow': '#34d399',
-      '--chalk-pink': '#f43f5e',
-      '--chalk-blue': '#38bdf8',
-      '--ink-red': '#e11d48',
-      '--ink-blue': '#0284c7',
-      '--ink-gray': '#64748b',
-      '--tray': '#0e1013',
-      '--tray-line': 'rgba(255, 255, 255, 0.07)'
+      '--board-bg': '#121417', '--board-bg-2': '#181b20', '--wood': '#1e2229', '--wood-dark': '#0b0d10',
+      '--chalk': '#ecfdf5', '--chalk-dim': '#94a3b8', '--chalk-yellow': '#34d399', '--chalk-pink': '#f43f5e',
+      '--chalk-blue': '#38bdf8', '--ink-red': '#e11d48', '--ink-blue': '#0284c7', '--ink-gray': '#64748b',
+      '--tray': '#0e1013', '--tray-line': 'rgba(255, 255, 255, 0.07)'
     }
   },
   matteSlate: {
     name: "Matte Slate & Amber",
     vars: {
-      '--board-bg': '#16181c',
-      '--board-bg-2': '#1e2127',
-      '--wood': '#262a33',
-      '--wood-dark': '#0f1115',
-      '--chalk': '#f3f4f6',
-      '--chalk-dim': '#9ca3af',
-      '--chalk-yellow': '#f59e0b',
-      '--chalk-pink': '#fb7185',
-      '--chalk-blue': '#60a5fa',
-      '--ink-red': '#be123c',
-      '--ink-blue': '#1d4ed8',
-      '--ink-gray': '#4b5563',
-      '--tray': '#111317',
-      '--tray-line': 'rgba(255, 255, 255, 0.09)'
+      '--board-bg': '#16181c', '--board-bg-2': '#1e2127', '--wood': '#262a33', '--wood-dark': '#0f1115',
+      '--chalk': '#f3f4f6', '--chalk-dim': '#9ca3af', '--chalk-yellow': '#f59e0b', '--chalk-pink': '#fb7185',
+      '--chalk-blue': '#60a5fa', '--ink-red': '#be123c', '--ink-blue': '#1d4ed8', '--ink-gray': '#4b5563',
+      '--tray': '#111317', '--tray-line': 'rgba(255, 255, 255, 0.09)'
     }
   },
   pitchBlack: {
     name: "Pitch Black & Ultraviolet",
     vars: {
-      '--board-bg': '#050507',
-      '--board-bg-2': '#0b0b10',
-      '--wood': '#13131c',
-      '--wood-dark': '#020204',
-      '--chalk': '#fafafa',
-      '--chalk-dim': '#787882',
-      '--chalk-yellow': '#c084fc',
-      '--chalk-pink': '#f43f5e',
-      '--chalk-blue': '#38bdf8',
-      '--ink-red': '#e11d48',
-      '--ink-blue': '#0284c7',
-      '--ink-gray': '#52525b',
-      '--tray': '#07070a',
-      '--tray-line': 'rgba(255, 255, 255, 0.06)'
+      '--board-bg': '#050507', '--board-bg-2': '#0b0b10', '--wood': '#13131c', '--wood-dark': '#020204',
+      '--chalk': '#fafafa', '--chalk-dim': '#787882', '--chalk-yellow': '#c084fc', '--chalk-pink': '#f43f5e',
+      '--chalk-blue': '#38bdf8', '--ink-red': '#e11d48', '--ink-blue': '#0284c7', '--ink-gray': '#52525b',
+      '--tray': '#07070a', '--tray-line': 'rgba(255, 255, 255, 0.06)'
     }
   },
   crimsonMatrix: {
     name: "Crimson Matrix",
     vars: {
-      '--board-bg': '#12080a',
-      '--board-bg-2': '#1a0e10',
-      '--wood': '#241215',
-      '--wood-dark': '#080304',
-      '--chalk': '#fff1f2',
-      '--chalk-dim': '#fda4af',
-      '--chalk-yellow': '#f0a94e',
-      '--chalk-pink': '#f43f5e',
-      '--chalk-blue': '#38bdf8',
-      '--ink-red': '#e11d48',
-      '--ink-blue': '#0284c7',
-      '--ink-gray': '#713f12',
-      '--tray': '#0d0507',
-      '--tray-line': 'rgba(244, 63, 94, 0.12)'
+      '--board-bg': '#12080a', '--board-bg-2': '#1a0e10', '--wood': '#241215', '--wood-dark': '#080304',
+      '--chalk': '#fff1f2', '--chalk-dim': '#fda4af', '--chalk-yellow': '#f0a94e', '--chalk-pink': '#f43f5e',
+      '--chalk-blue': '#38bdf8', '--ink-red': '#e11d48', '--ink-blue': '#0284c7', '--ink-gray': '#713f12',
+      '--tray': '#0d0507', '--tray-line': 'rgba(244, 63, 94, 0.12)'
     }
   },
   emeraldTerminal: {
     name: "Emerald Terminal",
     vars: {
-      '--board-bg': '#061510',
-      '--board-bg-2': '#0b241c',
-      '--wood': '#11352a',
-      '--wood-dark': '#030a07',
-      '--chalk': '#ecfdf5',
-      '--chalk-dim': '#6ee7b7',
-      '--chalk-yellow': '#34d399',
-      '--chalk-pink': '#f43f5e',
-      '--chalk-blue': '#38bdf8',
-      '--ink-red': '#e11d48',
-      '--ink-blue': '#0284c7',
-      '--ink-gray': '#065f46',
-      '--tray': '#040d0a',
-      '--tray-line': 'rgba(52, 211, 153, 0.12)'
+      '--board-bg': '#061510', '--board-bg-2': '#0b241c', '--wood': '#11352a', '--wood-dark': '#030a07',
+      '--chalk': '#ecfdf5', '--chalk-dim': '#6ee7b7', '--chalk-yellow': '#34d399', '--chalk-pink': '#f43f5e',
+      '--chalk-blue': '#38bdf8', '--ink-red': '#e11d48', '--ink-blue': '#0284c7', '--ink-gray': '#065f46',
+      '--tray': '#040d0a', '--tray-line': 'rgba(52, 211, 153, 0.12)'
     }
   },
   cyberpunkAmber: {
     name: "Cyberpunk Amber",
     vars: {
-      '--board-bg': '#140c04',
-      '--board-bg-2': '#211406',
-      '--wood': '#301c08',
-      '--wood-dark': '#080502',
-      '--chalk': '#fffbeb',
-      '--chalk-dim': '#fcd34d',
-      '--chalk-yellow': '#fbbf24',
-      '--chalk-pink': '#fb7185',
-      '--chalk-blue': '#38bdf8',
-      '--ink-red': '#e11d48',
-      '--ink-blue': '#0284c7',
-      '--ink-gray': '#78350f',
-      '--tray': '#0d0803',
-      '--tray-line': 'rgba(251, 191, 36, 0.12)'
+      '--board-bg': '#140c04', '--board-bg-2': '#211406', '--wood': '#301c08', '--wood-dark': '#080502',
+      '--chalk': '#fffbeb', '--chalk-dim': '#fcd34d', '--chalk-yellow': '#fbbf24', '--chalk-pink': '#fb7185',
+      '--chalk-blue': '#38bdf8', '--ink-red': '#e11d48', '--ink-blue': '#0284c7', '--ink-gray': '#78350f',
+      '--tray': '#0d0803', '--tray-line': 'rgba(251, 191, 36, 0.12)'
     }
   }
 };
 
-// ---------------------------------------------------------------------
-// Sound Engine — everything is synthesized with the Web Audio API so
-// there are no audio files to host or load. Preference is remembered
-// in localStorage (this is a real deployed app, not a sandboxed preview,
-// so persisting across visits is safe and expected here).
-// ---------------------------------------------------------------------
 const SoundFX = (() => {
   let ctx = null;
   let enabled = localStorage.getItem('zc_sound') !== 'off';
@@ -835,10 +734,7 @@ const SoundFX = (() => {
 
   return {
     isEnabled: () => enabled,
-    setEnabled(v) {
-      enabled = v;
-      localStorage.setItem('zc_sound', v ? 'on' : 'off');
-    },
+    setEnabled(v) { enabled = v; localStorage.setItem('zc_sound', v ? 'on' : 'off'); },
     unlock() { ensureCtx(); },
     click()      { tone({ freq: 720, duration: 0.05, type: 'square', gain: 0.045 }); },
     moveHuman()  { tone({ freq: 520, duration: 0.09, type: 'sine', gain: 0.16 }); tone({ freq: 780, duration: 0.05, type: 'sine', gain: 0.06, delay: 0.02 }); },
@@ -852,7 +748,6 @@ const SoundFX = (() => {
   };
 })();
 
-// Browsers block audio until a user gesture — unlock on the first tap/click.
 window.addEventListener('pointerdown', () => SoundFX.unlock(), { once: true });
 
 function toggleSound() {
@@ -884,16 +779,8 @@ function applyThemeVariables(vars) {
   }
 }
 
-function previewTheme(key) {
-  if (themes[key]) {
-    applyThemeVariables(themes[key].vars);
-  }
-}
-
-function revertPreview() {
-  applyThemeVariables(themes[activeThemeKey].vars);
-}
-
+function previewTheme(key) { if (themes[key]) applyThemeVariables(themes[key].vars); }
+function revertPreview() { applyThemeVariables(themes[activeThemeKey].vars); }
 function selectTheme(key) {
   if (!themes[key]) return;
   activeThemeKey = key;
@@ -954,9 +841,6 @@ async function switchModelFile(filename) {
   }
 }
 
-// Every theme is rendered as a swatch card up front — nothing to scroll
-// through or expand, and hovering previews it live since the drawer
-// doesn't cover the whole board.
 function initThemeGrid() {
   const grid = document.getElementById('themeGrid');
   grid.innerHTML = '';
@@ -999,9 +883,14 @@ function seededJitter(seed, spread) {
   return (frac - 0.5) * spread;
 }
 
-function markMarkup(type, idx) {
+function markMarkup(val, idx) {
   const rot = seededJitter(idx + 1, 10).toFixed(1);
-  if (type === 1) {
+  
+  // Decide which symbol this internal Player value corresponds to
+  const p1Symbol = humanInternal === 1 ? humanSymbol : aiSymbol;
+  const isX = (val === 1 && p1Symbol === 'X') || (val === -1 && p1Symbol === 'O');
+
+  if (isX) {
     const j = n => seededJitter(idx + n, 6);
     return `<svg class="mark mark-x" viewBox="0 0 100 100" style="transform:rotate(${rot}deg)">
       <path data-draw pathLength="1" filter="url(#chalk-rough)" d="M ${18 + j(1)} ${20 + j(2)} Q 50 48 ${82 + j(3)} ${80 + j(4)}"/>
@@ -1027,8 +916,13 @@ function stampMarkup(status, macroIdx) {
       <text x="50" y="59" text-anchor="middle" font-size="34">–</text>
     </svg>`;
   }
-  const letter = status === 1 ? 'X' : 'O';
-  const winClass = status === 1 ? 'stamp-win-x' : 'stamp-win-o';
+  
+  // Decide which symbol this internal Player win corresponds to
+  const p1Symbol = humanInternal === 1 ? humanSymbol : aiSymbol;
+  const isX = (status === 1 && p1Symbol === 'X') || (status === -1 && p1Symbol === 'O');
+  
+  const letter = isX ? 'X' : 'O';
+  const winClass = isX ? 'stamp-win-x' : 'stamp-win-o';
   
   return `<svg class="stamp ${winClass}" viewBox="0 0 100 100" style="transform:rotate(${rot}deg)">
     <circle class="stamp-ring" cx="50" cy="50" r="40" filter="url(#chalk-rough)"/>
@@ -1110,22 +1004,27 @@ function createBoard() {
   }
 }
 
-function startGame(playerSide) {
-  humanPlayer = playerSide;
-  aiPlayer = -playerSide;
+function startGame(selectedSymbol) {
+  humanSymbol = selectedSymbol;
+  aiSymbol = selectedSymbol === 'X' ? 'O' : 'X';
+  
   resetGameState();
-  // First move is always a coin flip, independent of which symbol was chosen.
-  currentTurn = Math.random() < 0.5 ? 1 : -1;
+  
+  // Coin toss decides who maps to Internal Player 1 (the player who goes first)
+  humanInternal = Math.random() < 0.5 ? 1 : -1;
+  aiInternal = -humanInternal;
+  currentTurn = 1; // AlphaZero always requires 1 to move first
+  
   gameActive = true;
   document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
   updateRoster();
   SoundFX.click();
 
-  if (currentTurn === aiPlayer) {
-    updateStatus('Engine is thinking…', 'pending');
+  if (currentTurn === aiInternal) {
+    updateStatus('Engine won the toss. Thinking...', 'pending');
     triggerAIMove();
   } else {
-    updateStatus('Your move.', 'active');
+    updateStatus('You won the toss! Your move.', 'active');
   }
   updateBoardUI();
 }
@@ -1159,10 +1058,10 @@ function updateMoveCount() {
 function updateRoster() {
   const you = document.getElementById('rosterYouMark');
   const ai = document.getElementById('rosterAiMark');
-  you.textContent = humanPlayer === 1 ? 'X' : 'O';
-  you.className = 'mark-chip ' + (humanPlayer === 1 ? 'chip-x' : 'chip-o');
-  ai.textContent = aiPlayer === 1 ? 'X' : 'O';
-  ai.className = 'mark-chip ' + (aiPlayer === 1 ? 'chip-x' : 'chip-o');
+  you.textContent = humanSymbol;
+  you.className = 'mark-chip ' + (humanSymbol === 'X' ? 'chip-x' : 'chip-o');
+  ai.textContent = aiSymbol;
+  ai.className = 'mark-chip ' + (aiSymbol === 'X' ? 'chip-x' : 'chip-o');
   document.getElementById('rosterRow').style.display = 'block';
 }
 
@@ -1178,7 +1077,7 @@ function updateBoardUI() {
     }
 
     let macroClass = 'macro-grid';
-    if (isMacroActive && currentTurn === humanPlayer) {
+    if (isMacroActive && currentTurn === humanInternal) {
       macroClass += ' macro-active';
     } else if (gameActive && !isMacroActive && macroStatus[m] === 0) {
       macroClass += ' macro-inactive';
@@ -1216,7 +1115,7 @@ function updateBoardUI() {
           cellElem.innerHTML = '';
           cellElem.dataset.rendered = '';
         }
-        cellElem.disabled = !gameActive || !isMacroActive || currentTurn !== humanPlayer;
+        cellElem.disabled = !gameActive || !isMacroActive || currentTurn !== humanInternal;
       }
       cellElem.className = cellClass;
     }
@@ -1224,17 +1123,17 @@ function updateBoardUI() {
 }
 
 async function handleHumanMove(macro, micro) {
-  if (!gameActive || currentTurn !== humanPlayer) return;
+  if (!gameActive || currentTurn !== humanInternal) return;
   const idx = macro * 9 + micro;
 
   if (board[idx] !== 0 || macroStatus[macro] !== 0) return;
   if (activeGrid !== -1 && activeGrid !== macro) return;
 
-  makeMove(idx, humanPlayer);
+  makeMove(idx, humanInternal);
 
   if (checkGameOver()) return;
 
-  currentTurn = aiPlayer;
+  currentTurn = aiInternal;
   updateStatus('Engine is thinking…', 'pending');
   updateBoardUI();
   await triggerAIMove();
@@ -1249,16 +1148,22 @@ async function triggerAIMove() {
     });
 
     const data = await res.json();
-    if (data.move !== -1) {
-      makeMove(data.move, aiPlayer);
+    
+    if (typeof data.move === 'number' && data.move >= 0 && data.move <= 80) {
+      makeMove(data.move, aiInternal);
       if (data.value !== undefined) {
-        // Fix: Multiply raw engine value by aiPlayer side to sync with UI X vs O colors
-        updateEvalBar(data.value * aiPlayer);
+        // Adjust the neural network's evaluation so positive is always X and negative is always O
+        const xValue = data.value * (aiSymbol === 'X' ? 1 : -1);
+        updateEvalBar(xValue);
       }
+    } else {
+      console.error('Engine returned invalid move:', data);
+      updateStatus('Engine error — invalid move.', 'bad');
+      return; 
     }
 
     if (!checkGameOver()) {
-      currentTurn = humanPlayer;
+      currentTurn = humanInternal;
       updateStatus('Your move.', 'active');
       updateBoardUI();
     }
@@ -1274,7 +1179,7 @@ function makeMove(idx, player) {
   moveCount++;
   updateMoveCount();
 
-  if (player === humanPlayer) SoundFX.moveHuman(); else SoundFX.moveAI();
+  if (player === humanInternal) SoundFX.moveHuman(); else SoundFX.moveAI();
 
   const macro = Math.floor(idx / 9);
   const micro = idx % 9;
@@ -1286,9 +1191,6 @@ function makeMove(idx, player) {
 
   freeMoveRule = false;
   
-  // FIX: The next active grid is strictly determined by the micro-cell played.
-  // Winning the current macro-grid does NOT give a free move. Only if the TARGET
-  // macro-grid is already won or full does the next player get a free move.
   if (macroStatus[micro] !== 0) {
     activeGrid = -1;
     freeMoveRule = true;
@@ -1316,8 +1218,8 @@ function checkGameOver() {
   const winner = checkSubGridWin(macroStatus);
   if (winner !== 0) {
     gameActive = false;
-    if (winner === humanPlayer) { updateStatus('You won this one.', 'good'); SoundFX.gameWin(); }
-    else if (winner === aiPlayer) { updateStatus('Engine won this one.', 'bad'); SoundFX.gameLose(); }
+    if (winner === humanInternal) { updateStatus('You won this one.', 'good'); SoundFX.gameWin(); }
+    else if (winner === aiInternal) { updateStatus('Engine won this one.', 'bad'); SoundFX.gameLose(); }
     else { updateStatus("Board's full — a draw.", 'default'); SoundFX.gameDraw(); }
     updateBoardUI();
     return true;
@@ -1328,7 +1230,7 @@ function checkGameOver() {
 function updateHint() {
   const el = document.getElementById('statusHint');
   if (!el) return;
-  if (gameActive && freeMoveRule && currentTurn === humanPlayer) {
+  if (gameActive && freeMoveRule && currentTurn === humanInternal) {
     el.textContent = 'Sent to a finished board — play anywhere open.';
     el.classList.remove('hidden');
   } else {
@@ -1345,7 +1247,13 @@ function updateStatus(msg, kind = 'default') {
 
 function updateEvalBar(val) {
   const valElem = document.getElementById('evalValue');
+  
+  // Color the text dynamically to match the symbol currently winning
   valElem.textContent = val > 0 ? `+${val.toFixed(2)}` : val.toFixed(2);
+  if (val > 0.05) valElem.style.color = 'var(--chalk-pink)'; // X winning
+  else if (val < -0.05) valElem.style.color = 'var(--chalk-blue)'; // O winning
+  else valElem.style.color = 'var(--chalk)'; // Even
+
   const xPercent = Math.min(100, Math.max(0, ((val + 1) / 2) * 100));
   document.getElementById('evalBarX').style.width = `${xPercent}%`;
   document.getElementById('evalBarO').style.width = `${100 - xPercent}%`;
