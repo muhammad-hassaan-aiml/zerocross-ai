@@ -15,15 +15,17 @@ class Evaluator:
         self.device = device
 
     def calculate_elo_diff(self, win_rate):
-        """Calculates Elo difference based on win rate. Clamped to prevent math domain errors."""
         win_rate = max(0.01, min(0.99, win_rate))
         return -400.0 * math.log10((1.0 / win_rate) - 1.0)
 
+    def get_lower_confidence_bound(self, win_rate, total_games, z=1.28):
+        # 1.28 Z-score equates to roughly 90% confidence level
+        if total_games == 0:
+            return 0.0
+        variance = (win_rate * (1.0 - win_rate)) / total_games
+        return win_rate - (z * math.sqrt(variance))
+
     def play_match_batched(self, net1, net2, num_games, sims):
-        """
-        Executes num_games concurrently, batching MCTS leaf evaluations.
-        Pass None for net1 or net2 to use a uniform random baseline agent.
-        """
         states = [zerocross_engine.GameState() for _ in range(num_games)]
         p1_color = [1 if g % 2 == 0 else -1 for g in range(num_games)]
         trees = [None] * num_games
@@ -124,30 +126,41 @@ class Evaluator:
         
         return win_rate, elo_diff, p1_wins, p2_wins, draws
 
-    def run_full_evaluation(self, candidate_net, champion_net, sims=50, games_per_match=20):
+    def run_full_evaluation(self, candidate_net, champion_nets, sims=50, games_per_match=20):
         print(f"\nStarting Comprehensive Evaluation ({games_per_match} games per matchup)")
         
         print("\nMatchup 1: Candidate vs Random Baseline")
         cand_vs_rand_wr, cand_vs_rand_elo, w, l, d = self.play_match_batched(candidate_net, None, games_per_match, sims)
         print(f"Candidate vs Random | WR: {cand_vs_rand_wr:.2%} | Elo Diff: {cand_vs_rand_elo:+.0f} | W: {w} L: {l} D: {d}")
         
-        if champion_net:
-            print("\nMatchup 2: Champion vs Random Baseline")
-            champ_vs_rand_wr, champ_vs_rand_elo, w, l, d = self.play_match_batched(champion_net, None, games_per_match, sims)
-            print(f"Champion vs Random  | WR: {champ_vs_rand_wr:.2%} | Elo Diff: {champ_vs_rand_elo:+.0f} | W: {w} L: {l} D: {d}")
-            
-            print("\nMatchup 3: Candidate vs Champion")
-            cand_vs_champ_wr, cand_vs_champ_elo, w, l, d = self.play_match_batched(candidate_net, champion_net, games_per_match, sims)
-            print(f"Candidate vs Champ  | WR: {cand_vs_champ_wr:.2%} | Elo Diff: {cand_vs_champ_elo:+.0f} | W: {w} L: {l} D: {d}")
-            
-            promoted = cand_vs_champ_wr >= 0.55
-        else:
+        if not champion_nets or champion_nets[0] is None:
             print("\nNo champion provided. Candidate becomes first champion by default.")
-            cand_vs_champ_wr = 1.0
-            cand_vs_champ_elo = 0.0
-            promoted = True
+            return True, cand_vs_rand_wr, 1.0, 0.0
             
-        return promoted, cand_vs_rand_wr, cand_vs_champ_wr, cand_vs_champ_elo
+        promoted = True
+        primary_champ_wr = 0.0
+        primary_champ_elo = 0.0
+        
+        for idx, champ in enumerate(champion_nets):
+            if champ is None:
+                continue
+                
+            champ_type = "Latest Champion" if idx == 0 else f"Historical Champion {idx}"
+            print(f"\nMatchup {idx + 2}: Candidate vs {champ_type}")
+            
+            wr, elo, w, l, d = self.play_match_batched(candidate_net, champ, games_per_match, sims)
+            lcb = self.get_lower_confidence_bound(wr, games_per_match)
+            
+            print(f"Candidate vs {champ_type} | WR: {wr:.2%} (LCB: {lcb:.2%}) | Elo Diff: {elo:+.0f} | W: {w} L: {l} D: {d}")
+            
+            if idx == 0:
+                primary_champ_wr = wr
+                primary_champ_elo = elo
+                
+            if lcb <= 0.50:
+                promoted = False
+                
+        return promoted, cand_vs_rand_wr, primary_champ_wr, primary_champ_elo
 
 if __name__ == "__main__":
     device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
@@ -160,7 +173,7 @@ if __name__ == "__main__":
     
     promoted, rand_wr, champ_wr, elo_diff = evaluator.run_full_evaluation(
         candidate_net=cand, 
-        champion_net=champ, 
+        champion_nets=[champ], 
         sims=10, 
         games_per_match=2
     )

@@ -4,6 +4,7 @@ import json
 import time
 import sys
 import argparse
+import random
 
 sys.path.extend(['.', 'build', '../build', os.path.join(os.getcwd(), 'build')])
 
@@ -15,13 +16,10 @@ from train import train_network
 from evaluate import Evaluator
 
 def estimate_buffer_memory_mb(buffer):
-    """Calculates the exact byte footprint of the Python replay buffer and converts to MB."""
     if not buffer:
         return 0.0
     
     sample = buffer[0]
-    
-    # Support both legacy lists and optimized numpy arrays
     state_size = sample[0].nbytes if hasattr(sample[0], 'nbytes') else sys.getsizeof(sample[0]) + sum(sys.getsizeof(x) for x in sample[0])
     policy_size = sample[1].nbytes if hasattr(sample[1], 'nbytes') else sys.getsizeof(sample[1]) + sum(sys.getsizeof(x) for x in sample[1])
     reward_size = sample[2].nbytes if hasattr(sample[2], 'nbytes') else sys.getsizeof(sample[2])
@@ -34,10 +32,6 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                  concurrent_games=10, games_per_iteration=None, mcts_sims=50, eval_games=2, eval_sims=20,
                  batch_size=512, num_res_blocks=None, num_channels=None, max_consecutive_rejections=5):
     
-    # games_per_iteration is decoupled from concurrent_games: concurrent_games controls how many
-    # games run in-flight at once (bounded by GPU memory / batch efficiency), while
-    # games_per_iteration controls how much self-play data you actually generate before the next
-    # train+eval step. Defaulting them equal preserves old behavior if you don't pass it explicitly.
     if games_per_iteration is None:
         games_per_iteration = concurrent_games
 
@@ -70,9 +64,6 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             writer = csv.writer(f)
             writer.writerow(["Iteration", "LR", "PI_Loss", "V_Loss", "Entropy", "WinRate_vs_Random", "Elo_Diff_vs_Champ", "Promoted"])
 
-    # Small sidecar file tracking state that must survive even when nothing has been
-    # promoted yet (e.g. across separate Kaggle sessions), so a bad early RNG streak
-    # can't stall the run forever, and iterations don't reset.
     consecutive_rejections = 0
     start_iteration = 0
     if os.path.exists(state_path):
@@ -91,7 +82,6 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
             best_net.load_state_dict(checkpoint['model_state_dict'])
             optimizer_state = checkpoint.get('optimizer_state_dict', None)
-            # Only fallback to checkpoint iteration if JSON state didn't track it
             if start_iteration == 0:
                 start_iteration = checkpoint.get('iteration', 0)
         else:
@@ -116,7 +106,6 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         current_iter = i + 1
         print(f"\nALPHAZERO ITERATION {current_iter} of {start_iteration + iterations}")
         
-        # Stretched learning rate schedule for long 200+ hour runs
         if current_iter <= 100:
             current_lr = 0.001
         elif current_iter <= 250:
@@ -191,9 +180,25 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             print(f"\n[3/4] Comprehensive Evaluation ({eval_games} games/match)")
             eval_start = time.time()
             evaluator = Evaluator(device=device)
+            
+            champion_nets = [best_net]
+            history_files = [f for f in os.listdir(drive_dir) if f.startswith("champion_gen_") and f.endswith(".pth")]
+            if history_files:
+                selected_history = random.choice(history_files)
+                hist_path = os.path.join(drive_dir, selected_history)
+                print(f"Loading historical opponent: {selected_history}")
+                hist_net = ZeroCrossNet(**net_kwargs).to(device)
+                checkpoint = torch.load(hist_path, map_location=device, weights_only=False)
+                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                    hist_net.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    hist_net.load_state_dict(checkpoint)
+                hist_net.eval()
+                champion_nets.append(hist_net)
+
             promoted, rand_wr, champ_wr, elo_diff = evaluator.run_full_evaluation(
                 candidate_net=candidate_net,
-                champion_net=best_net,
+                champion_nets=champion_nets,
                 sims=eval_sims,
                 games_per_match=eval_games
             )
@@ -201,11 +206,6 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         
         if do_train:
             print("\n[4/4] Model Gating")
-
-            # Always persist the latest trained candidate, independent of gating.
-            # Otherwise, if promotion never succeeds, a restarted Kaggle session has
-            # nothing but the original random-init weights to resume from, even
-            # though real training happened.
             torch.save({
                 'iteration': current_iter,
                 'model_state_dict': candidate_net.state_dict(),
@@ -220,13 +220,8 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
 
             if not promoted:
                 consecutive_rejections += 1
-                print(f"REJECTED Candidate failed to hit 55 percent. "
-                      f"({consecutive_rejections}/{max_consecutive_rejections} consecutive rejections)")
-
-                if consecutive_rejections >= max_consecutive_rejections:
-                    promoted = True
-                    print(f"Force-promoting after {consecutive_rejections} consecutive rejections "
-                          f"to avoid stalling on gating noise.")
+                print(f"REJECTED Candidate failed to clear the confidence bounds. "
+                      f"({consecutive_rejections} consecutive rejections)")
 
             if promoted:
                 print(f"UPGRADE Candidate promoted! Saving to {model_path}")
@@ -248,13 +243,12 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 torch.save(checkpoint_data, history_path)
                 print(f"Historical champion archived to {history_path}")
                 
-                max_archives = 3
+                max_archives = 25
                 old_champion_path = os.path.join(drive_dir, f"champion_gen_{current_iter - max_archives}.pth")
                 if os.path.exists(old_champion_path):
                     os.remove(old_champion_path)
                     print(f"Deleted old champion {old_champion_path} to save space")
 
-            # Save pipeline state (streaks and total iteration count)
             with open(state_path, "w") as f:
                 json.dump({
                     "consecutive_rejections": consecutive_rejections,
@@ -301,7 +295,6 @@ if __name__ == "__main__":
     parser.add_argument("--eval-games", type=int, default=2, help="Games per matchup in evaluation (e.g. 40 on Kaggle)")
     parser.add_argument("--eval-sims", type=int, default=20, help="MCTS simulations per move during evaluation")
     
-    # New argument to scale batch size for GPU
     parser.add_argument("--batch-size", type=int, default=512, help="Training batch size")
 
     parser.add_argument("--num-res-blocks", type=int, default=None, help="Override ZeroCrossNet residual block count (default: network.py's default)")
