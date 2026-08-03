@@ -5,7 +5,7 @@ import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import List
 
 # Ensure Python discovers the compiled C++ engine and network modules
@@ -18,46 +18,25 @@ app = FastAPI(title="ZeroCross AI Engine")
 
 device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
 net = None
-current_loaded_model = None
 models_dir = os.path.join(os.path.dirname(__file__), '../models')
 frontend_dir = os.path.join(os.path.dirname(__file__), 'frontend')
 
-def load_specific_model(filename):
-    global net, current_loaded_model
-    model_path = os.path.join(models_dir, filename)
-    
-    print(f"Loading {filename} onto {device}...")
-    new_net = ZeroCrossNet()
-    if os.path.exists(model_path):
-        new_net.load_checkpoint(model_path)
-        new_net.to(device)
-        new_net.eval()
-        net = new_net
-        current_loaded_model = filename
-        print(f"Model {filename} loaded successfully!")
-        return True
-    else:
-        print(f"WARNING: Model {filename} not found!")
-        return False
+# Hardcode the model path to prevent path traversal attacks
+MODEL_PATH = os.path.join(models_dir, 'best_model.pth')
 
 @app.on_event("startup")
 def startup_event():
     global net
+    
+    # Fail loudly if the model is missing or 0 bytes
+    if not os.path.exists(MODEL_PATH) or os.path.getsize(MODEL_PATH) == 0:
+        raise RuntimeError(f"FATAL: Valid model not found or is empty at {MODEL_PATH}")
+
     net = ZeroCrossNet()
+    net.load_checkpoint(MODEL_PATH)
     net.to(device)
     net.eval()
-
-    # Auto-load a sensible default checkpoint so the engine isn't serving
-    # moves from random init weights before the frontend gets a chance to
-    # call /load. Prefer a file literally named "best_model.pth"; otherwise
-    # fall back to the first checkpoint alphabetically.
-    if os.path.exists(models_dir):
-        available = sorted(f for f in os.listdir(models_dir) if f.endswith('.pth'))
-        if available:
-            preferred = 'best_model.pth' if 'best_model.pth' in available else available[0]
-            load_specific_model(preferred)
-
-    print("ZeroCross Engine Server Started.")
+    print(f"ZeroCross Engine Server Started. Loaded best_model.pth on {device}.")
 
 # Serve frontend static assets if directory exists
 if os.path.exists(frontend_dir):
@@ -77,38 +56,23 @@ def read_root():
         )
     return {"message": "ZeroCross AI Engine API Running"}
 
-@app.get("/models")
-def get_available_models():
-    """Scans the models directory and returns all available .pth files."""
-    if not os.path.exists(models_dir):
-        return {"models": []}
-    
-    pth_files = [f for f in os.listdir(models_dir) if f.endswith('.pth')]
-    pth_files.sort() 
-    return {"models": pth_files, "current": current_loaded_model}
-
-class LoadModelRequest(BaseModel):
-    filename: str
-
-@app.post("/load")
-def load_model_endpoint(req: LoadModelRequest):
-    """Hot-swaps the active neural network in memory."""
-    success = load_specific_model(req.filename)
-    if success:
-        return {"message": f"Successfully loaded {req.filename}"}
-    else:
-        raise HTTPException(status_code=404, detail="Model file not found")
-
+# Input validation and compute capping
 class MoveRequest(BaseModel):
     board: List[int]
-    active_grid: int
-    simulations: int = 100
+    active_grid: int = Field(ge=-1, le=8)
+    simulations: int = Field(default=200, le=800)
+
+    @field_validator('board')
+    @classmethod
+    def validate_board(cls, v):
+        if len(v) != 81:
+            raise ValueError("Board must be exactly 81 elements")
+        if any(cell not in [-1, 0, 1] for cell in v):
+            raise ValueError("Board cells must only contain -1, 0, or 1")
+        return v
 
 @app.post("/move")
 def get_best_move(req: MoveRequest):
-    if len(req.board) != 81:
-        raise HTTPException(status_code=400, detail="Board must be exactly 81 elements")
-    
     try:
         state = zerocross_engine.GameState.from_array(req.board, req.active_grid)
     except Exception as e:
