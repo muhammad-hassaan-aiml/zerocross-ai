@@ -71,35 +71,35 @@ def print_cell_helper():
 def main():
     print("\nConnecting to AI Engine...")
     try:
-        res = requests.get("http://127.0.0.1:8000/models")
+        # Simple ping to verify the server is running
+        res = requests.get("http://127.0.0.1:8000/")
         if res.status_code == 200:
-            available_models = res.json()["models"]
-            if not available_models:
-                print("\nNo models found! Using random initialization.")
-            else:
-                print("\nAvailable Opponents:")
-                for idx, model_name in enumerate(available_models):
-                    print(f"  {idx + 1}. {model_name}")
-                
-                choice = 0
-                while choice < 1 or choice > len(available_models):
-                    try:
-                        choice = int(input(f"\nSelect your opponent (1-{len(available_models)}): "))
-                    except ValueError:
-                        pass
-                        
-                selected_model = available_models[choice - 1]
-                print(f"Booting up {selected_model}...")
-                requests.post("http://127.0.0.1:8000/load", json={"filename": selected_model})
+            print("Successfully connected to the backend!")
         else:
-            print("Failed to fetch models from server.")
+            print("Failed to reach server API.")
+            sys.exit(1)
     except requests.exceptions.ConnectionError:
         print("Could not connect. Make sure FastAPI (uvicorn server.main:app) is running!")
         sys.exit(1)
 
+    print(f"\n{C_W}Select Engine Difficulty:{C_R}")
+    print("  1. Easy (50 simulations)")
+    print("  2. Medium (200 simulations)")
+    print("  3. Hard (800 simulations)")
+    
+    diff_choice = 0
+    while diff_choice not in [1, 2, 3]:
+        try:
+            diff_choice = int(input("\nSelect difficulty (1-3): "))
+        except ValueError:
+            pass
+            
+    sims_map = {1: 50, 2: 200, 3: 800}
+    simulations = sims_map[diff_choice]
+
     side = ""
     while side not in ['X', 'O', 'R']:
-        side = input("Play as X (First), O (Second), or Random? [X/O/R]: ").strip().upper()
+        side = input("\nPlay as X (First), O (Second), or Random? [X/O/R]: ").strip().upper()
     
     if side == 'R':
         side = random.choice(['X', 'O'])
@@ -132,7 +132,7 @@ def main():
             break
 
         print_board(board, macro_status, active_grid)
-        # Display +1 for active grid messaging
+        
         grid_msg = f"Macro Grid {active_grid + 1}" if active_grid != -1 else "ANY (Free Move - Choose any open Macro Grid 1-9)"
         print(f"Target Constraint: {C_W}{grid_msg}{C_R}")
         
@@ -142,14 +142,12 @@ def main():
                 if not raw_input:
                     continue
                 
-                # Remove spaces so "5 5" and "55" both become "55"
                 cleaned_input = raw_input.replace(" ", "")
                 
                 if len(cleaned_input) != 2 or not cleaned_input.isdigit():
                     print(f"{C_X}Error: Please provide exactly two digits representing Macro and Micro cell (e.g., '71' or '7 1'){C_R}")
                     continue
                     
-                # Subtract 1 to convert from 1-9 human UI to 0-8 internal logic
                 macro = int(cleaned_input[0]) - 1
                 micro = int(cleaned_input[1]) - 1
                 
@@ -171,7 +169,6 @@ def main():
                     print(f"{C_X}ILLEGAL: You are forced to play inside Macro-grid {active_grid + 1}!{C_R}")
                     continue
                     
-                # Confirmation feedback echoing back 1-9 indices
                 print(f"{C_D}--> Confirmed: Placed in Macro {macro + 1}, Micro Cell {micro + 1}{C_R}")
                 
                 board[move] = human_p 
@@ -189,12 +186,12 @@ def main():
                 continue
 
         else:
-            print("\nAI is thinking...")
+            print(f"\nAI is thinking ({simulations} simulations)...")
             try:
                 res = requests.post("http://127.0.0.1:8000/move", json={
                     "board": board,
                     "active_grid": active_grid,
-                    "simulations": 600
+                    "simulations": simulations
                 })
                 
                 if res.status_code == 200:
@@ -204,7 +201,7 @@ def main():
                         
                     ai_macro = ai_move // 9
                     ai_micro = ai_move % 9
-                    # Adding 1 for human UI format
+                    
                     print(f"AI plays: Macro {ai_macro + 1}, Micro Cell {ai_micro + 1}")
                     
                     board[ai_move] = ai_p  
