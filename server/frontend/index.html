@@ -198,7 +198,6 @@ body {
 .status-bad { color: var(--ink-red); }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
-/* Native select styling */
 .select-wrap { position: relative; width: 100%; }
 .native-select {
   width: 100%;
@@ -226,7 +225,6 @@ body {
   color: var(--chalk-dim);
 }
 
-/* Theme swatch grid */
 .theme-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -268,7 +266,6 @@ body {
 }
 .theme-card.selected .theme-card-name { color: var(--chalk); }
 
-/* Toggle switch */
 .toggle-row {
   display: flex;
   align-items: center;
@@ -491,7 +488,7 @@ body {
         <p class="eyebrow mt-2" style="text-transform:none; letter-spacing:0;">Coin toss decides who opens the board.</p>
         <div class="active-model-note">
           <span class="flex-shrink-0">Engine:</span>
-          <span id="activeModelNote" class="truncate min-w-0">Searching…</span>
+          <span id="activeModelNote" class="truncate min-w-0">best_model.pth</span>
         </div>
       </div>
 
@@ -500,7 +497,7 @@ body {
           <span class="eyebrow">Status</span>
           <span id="moveCount" class="mono text-xs" style="color:var(--chalk-dim)"></span>
         </div>
-        <p id="statusMessage" class="text-lg font-bold h-7 flex items-center status-pending">Connecting…</p>
+        <p id="statusMessage" class="text-lg font-bold h-7 flex items-center status-pending">Ready — pick a side.</p>
         <p id="statusHint" class="status-hint hidden"></p>
         <div id="rosterRow" class="mono text-xs mb-4" style="display:none; color:var(--chalk-dim)">
           You <span id="rosterYouMark" class="mark-chip chip-x">X</span>
@@ -544,10 +541,12 @@ body {
 
   <div class="drawer-body">
     <div class="drawer-section">
-      <span class="eyebrow block mb-2">Model Checkpoint</span>
+      <span class="eyebrow block mb-2">Engine Difficulty</span>
       <div class="select-wrap">
-        <select id="modelSelect" class="native-select" onchange="selectModel(this.value)">
-          <option>Searching…</option>
+        <select id="difficultySelect" class="native-select" onchange="selectDifficulty(this.value)">
+          <option value="easy">Easy (50 Sims)</option>
+          <option value="medium">Medium (200 Sims)</option>
+          <option value="hard">Hard (800 Sims)</option>
         </select>
         <svg class="select-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
       </div>
@@ -574,7 +573,6 @@ let board = new Array(81).fill(0);
 let macroStatus = new Array(9).fill(0);
 let activeGrid = -1;
 
-// Decouple the internal player math from the visual symbols
 let humanInternal = 1;
 let aiInternal = -1;
 let humanSymbol = 'X';
@@ -584,10 +582,16 @@ let currentTurn = 1;
 let gameActive = false;
 let lastMoveIdx = -1;
 let moveCount = 0;
-let currentLoadedModel = null;
 let freeMoveRule = false;
 
-// 10 Curated Dark Aesthetic Themes
+const difficultySimulations = {
+  easy: 50,
+  medium: 200,
+  hard: 800
+};
+
+let currentDifficulty = localStorage.getItem('zc_difficulty') || 'medium';
+
 const themes = {
   chalkWood: {
     name: "Chalk & Wood (Default)",
@@ -809,36 +813,26 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-async function selectModel(filename) {
-  if (!filename || filename === currentLoadedModel) return;
+function getSimulations() {
+  return difficultySimulations[currentDifficulty] || 200;
+}
+
+function selectDifficulty(diff) {
+  if (!difficultySimulations[diff]) return;
+  currentDifficulty = diff;
+  localStorage.setItem('zc_difficulty', diff);
   SoundFX.click();
-  await switchModelFile(filename);
 }
 
-function updateActiveModelNote(filename) {
+function initDifficultyUI() {
+  const select = document.getElementById('difficultySelect');
+  if (select) select.value = currentDifficulty;
+  updateActiveModelNote('best_model.pth');
+}
+
+function updateActiveModelNote(text) {
   const el = document.getElementById('activeModelNote');
-  if (el) el.textContent = filename || '—';
-}
-
-async function switchModelFile(filename) {
-  updateStatus(`Loading ${filename}…`, 'pending');
-  document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
-
-  try {
-    await fetch('/load', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({filename})
-    });
-    currentLoadedModel = filename;
-    const select = document.getElementById('modelSelect');
-    if (select) select.value = filename;
-    updateActiveModelNote(filename);
-    if (!gameActive) enableControls();
-  } catch (err) {
-    updateStatus("Couldn't load that checkpoint.", 'bad');
-    enableControls();
-  }
+  if (el) el.textContent = text || 'best_model.pth';
 }
 
 function initThemeGrid() {
@@ -885,8 +879,6 @@ function seededJitter(seed, spread) {
 
 function markMarkup(val, idx) {
   const rot = seededJitter(idx + 1, 10).toFixed(1);
-  
-  // Decide which symbol this internal Player value corresponds to
   const p1Symbol = humanInternal === 1 ? humanSymbol : aiSymbol;
   const isX = (val === 1 && p1Symbol === 'X') || (val === -1 && p1Symbol === 'O');
 
@@ -917,7 +909,6 @@ function stampMarkup(status, macroIdx) {
     </svg>`;
   }
   
-  // Decide which symbol this internal Player win corresponds to
   const p1Symbol = humanInternal === 1 ? humanSymbol : aiSymbol;
   const isX = (status === 1 && p1Symbol === 'X') || (status === -1 && p1Symbol === 'O');
   
@@ -928,47 +919,6 @@ function stampMarkup(status, macroIdx) {
     <circle class="stamp-ring" cx="50" cy="50" r="40" filter="url(#chalk-rough)"/>
     <text x="50" y="61" text-anchor="middle" font-size="38">${letter}</text>
   </svg>`;
-}
-
-async function fetchModels() {
-  try {
-    const res = await fetch('/models?t=' + new Date().getTime());
-    const data = await res.json();
-    const models = data.models || [];
-    currentLoadedModel = data.current;
-
-    const select = document.getElementById('modelSelect');
-    select.innerHTML = '';
-
-    if (models.length === 0) {
-      const opt = document.createElement('option');
-      opt.textContent = 'No checkpoints found';
-      select.appendChild(opt);
-      updateActiveModelNote('no checkpoints found');
-      updateStatus('No checkpoints found on the server.', 'bad');
-      return;
-    }
-
-    if (!currentLoadedModel && models.length > 0) {
-      currentLoadedModel = models[0];
-    }
-
-    models.forEach(m => {
-      const opt = document.createElement('option');
-      opt.textContent = m;
-      opt.value = m;
-      select.appendChild(opt);
-    });
-
-    if (currentLoadedModel) {
-      select.value = currentLoadedModel;
-      updateActiveModelNote(currentLoadedModel);
-      await switchModelFile(currentLoadedModel);
-    }
-  } catch (err) {
-    console.error('Failed to fetch models', err);
-    updateStatus('Lost connection to the engine.', 'bad');
-  }
 }
 
 function enableControls() {
@@ -1010,10 +960,9 @@ function startGame(selectedSymbol) {
   
   resetGameState();
   
-  // Coin toss decides who maps to Internal Player 1 (the player who goes first)
   humanInternal = Math.random() < 0.5 ? 1 : -1;
   aiInternal = -humanInternal;
-  currentTurn = 1; // AlphaZero always requires 1 to move first
+  currentTurn = 1;
   
   gameActive = true;
   document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
@@ -1144,7 +1093,7 @@ async function triggerAIMove() {
     const res = await fetch('/move', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ board: board, active_grid: activeGrid, simulations: 50 })
+      body: JSON.stringify({ board: board, active_grid: activeGrid, simulations: getSimulations() })
     });
 
     const data = await res.json();
@@ -1152,7 +1101,6 @@ async function triggerAIMove() {
     if (typeof data.move === 'number' && data.move >= 0 && data.move <= 80) {
       makeMove(data.move, aiInternal);
       if (data.value !== undefined) {
-        // Adjust the neural network's evaluation so positive is always X and negative is always O
         const xValue = data.value * (aiSymbol === 'X' ? 1 : -1);
         updateEvalBar(xValue);
       }
@@ -1248,24 +1196,24 @@ function updateStatus(msg, kind = 'default') {
 function updateEvalBar(val) {
   const valElem = document.getElementById('evalValue');
   
-  // Color the text dynamically to match the symbol currently winning
   valElem.textContent = val > 0 ? `+${val.toFixed(2)}` : val.toFixed(2);
-  if (val > 0.05) valElem.style.color = 'var(--chalk-pink)'; // X winning
-  else if (val < -0.05) valElem.style.color = 'var(--chalk-blue)'; // O winning
-  else valElem.style.color = 'var(--chalk)'; // Even
+  if (val > 0.05) valElem.style.color = 'var(--chalk-pink)';
+  else if (val < -0.05) valElem.style.color = 'var(--chalk-blue)';
+  else valElem.style.color = 'var(--chalk)';
 
   const xPercent = Math.min(100, Math.max(0, ((val + 1) / 2) * 100));
   document.getElementById('evalBarX').style.width = `${xPercent}%`;
   document.getElementById('evalBarO').style.width = `${100 - xPercent}%`;
 }
 
-window.onload = async () => {
+window.onload = () => {
   applyThemeVariables(themes[activeThemeKey].vars);
   initThemeGrid();
   syncSoundUI();
+  initDifficultyUI();
   createBoard();
   updateMoveCount();
-  await fetchModels();
+  enableControls();
 };
 </script>
 </body>
