@@ -20,3 +20,6 @@ data/replay_buffer/*
 .vscode/
 models/*.jsonemsdk/
 build_wasm/
+
+emsdk/
+build_wasm/
