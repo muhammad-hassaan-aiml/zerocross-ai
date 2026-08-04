@@ -49,3 +49,25 @@ private:
     std::vector<float> generate_dirichlet(int num_valid_actions);
     float calculate_puct(std::shared_ptr<MCTSNode> parent, std::shared_ptr<MCTSNode> child) const;
 };
+
+class ParallelMCTS {
+public:
+    ParallelMCTS(int num_games, bool add_noise);
+
+    void set_state(int game_idx, const GameState& state);
+    void advance(int game_idx, int action);
+    bool is_done(int game_idx, int n_simulations) const;
+    std::vector<float> root_policy(int game_idx, float temperature) const;
+
+    std::vector<std::array<float, 486>> request_batch(int n_simulations, int batch_per_tree);
+    void submit_batch(const std::vector<std::vector<float>>& policies, const std::vector<float>& values);
+    
+    // Expose the mapping so Python bindings can route evaluations
+    const std::vector<int>& get_leaf_game_mapping() const { return leaf_game_mapping; }
+
+private:
+    int num_games;
+    bool add_noise_flag;
+    std::vector<std::shared_ptr<MCTSTree>> trees;
+    std::vector<int> leaf_game_mapping;
+};

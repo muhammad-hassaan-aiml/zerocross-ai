@@ -27,7 +27,6 @@ class Evaluator:
     def play_match_batched(self, net1, net2, num_games, sims):
         states = [zerocross_engine.GameState() for _ in range(num_games)]
         p1_color = [1 if g % 2 == 0 else -1 for g in range(num_games)]
-        trees = [None] * num_games
         ply_counts = [0] * num_games
         
         p1_wins, p2_wins, draws = 0, 0, 0
@@ -37,92 +36,118 @@ class Evaluator:
         if net1: net1.eval().to(self.device)
         if net2: net2.eval().to(self.device)
 
+        parallel_mcts = zerocross_engine.ParallelMCTS(num_games, False)
+
         while active_games:
-            net1_reqs = []
-            net2_reqs = []
-            
-            for i in list(active_games):
-                if states[i].is_terminal():
-                    winner = states[i].get_winner()
-                    if winner == p1_color[i]: 
-                        p1_wins += 1
-                    elif winner == -p1_color[i]: 
-                        p2_wins += 1
-                    else: 
-                        draws += 1
-                    active_games.remove(i)
-                    continue
+            progressed = True
+            while progressed:
+                progressed = False
+                for i in list(active_games):
+                    if states[i].is_terminal():
+                        winner = states[i].get_winner()
+                        if winner == p1_color[i]: 
+                            p1_wins += 1
+                        elif winner == -p1_color[i]: 
+                            p2_wins += 1
+                        else: 
+                            draws += 1
+                        active_games.remove(i)
+                        progressed = True
+                        continue
+                        
+                    curr_player = states[i].get_current_player()
+                    is_p1_turn = (curr_player == p1_color[i])
+                    active_net = net1 if is_p1_turn else net2
                     
-                curr_player = states[i].get_current_player()
-                is_p1_turn = (curr_player == p1_color[i])
-                active_net = net1 if is_p1_turn else net2
-                
-                if active_net is None:
-                    mask = states[i].legal_mask()
-                    valid = [idx for idx, legal in enumerate(mask) if legal]
-                    states[i].play(random.choice(valid))
-                    ply_counts[i] += 1
-                else:
-                    if trees[i] is None:
-                        trees[i] = zerocross_engine.MCTSTree(states[i], False)
-                        
-                    if not trees[i].is_done(sims):
-                        leaves = trees[i].request_leaves(8)
-                        if leaves.shape[0] > 0:
-                            if is_p1_turn:
-                                net1_reqs.append((i, leaves))
-                            else:
-                                net2_reqs.append((i, leaves))
-                    else:
-                        temp = 1.0 if ply_counts[i] < 6 else 0.0
-                        raw_policy = trees[i].root_policy(temp)
-                        mcts_policy = np.array(raw_policy, dtype=np.float64)
-                        policy_sum = np.sum(mcts_policy)
-                        
-                        if policy_sum > 0: 
-                            mcts_policy /= policy_sum
-                        else:
-                            mcts_policy = np.ones(81) / 81.0
-                            
-                        if temp > 0.0:
-                            action = np.random.choice(81, p=mcts_policy)
-                        else:
-                            action = np.argmax(mcts_policy)
-                            
+                    if active_net is None:
+                        mask = states[i].legal_mask()
+                        valid = [idx for idx, legal in enumerate(mask) if legal]
+                        action = random.choice(valid)
                         states[i].play(action)
+                        parallel_mcts.advance(i, action)
                         ply_counts[i] += 1
-                        trees[i] = None
-                        
-            for net, reqs in [(net1, net1_reqs), (net2, net2_reqs)]:
-                if net is not None and len(reqs) > 0:
-                    indices = []
-                    leaves_list = []
-                    for req in reqs:
-                        indices.extend([req[0]] * req[1].shape[0])
-                        leaves_list.append(req[1])
-                        
-                    batch_states_np = np.concatenate(leaves_list, axis=0)
-                    batch_states = torch.from_numpy(batch_states_np).to(self.device)
+                        progressed = True
+
+            if not active_games:
+                break
+
+            mcts_acted = False
+            for i in list(active_games):
+                if parallel_mcts.is_done(i, sims):
+                    temp = 1.0 if ply_counts[i] < 6 else 0.0
+                    raw_policy = parallel_mcts.root_policy(i, temp)
+                    mcts_policy = np.array(raw_policy, dtype=np.float64)
+                    policy_sum = np.sum(mcts_policy)
                     
+                    if policy_sum > 0: 
+                        mcts_policy /= policy_sum
+                    else:
+                        mcts_policy = np.ones(81) / 81.0
+                        
+                    if temp > 0.0:
+                        action = np.random.choice(81, p=mcts_policy)
+                    else:
+                        action = np.argmax(mcts_policy)
+                        
+                    states[i].play(action)
+                    parallel_mcts.advance(i, action)
+                    ply_counts[i] += 1
+                    mcts_acted = True
+
+            if mcts_acted:
+                continue
+
+            leaves, mapping = parallel_mcts.request_batch(sims, 8)
+            
+            if leaves.shape[0] > 0:
+                all_policies = np.zeros((leaves.shape[0], 81), dtype=np.float32)
+                all_values = np.zeros(leaves.shape[0], dtype=np.float32)
+
+                net1_k = []
+                net1_leaves = []
+                net2_k = []
+                net2_leaves = []
+
+                for k in range(leaves.shape[0]):
+                    game_idx = mapping[k]
+                    curr_player = states[game_idx].get_current_player()
+                    is_p1_turn = (curr_player == p1_color[game_idx])
+                    if is_p1_turn:
+                        net1_k.append(k)
+                        net1_leaves.append(leaves[k])
+                    else:
+                        net2_k.append(k)
+                        net2_leaves.append(leaves[k])
+
+                if net1_leaves and net1 is not None:
+                    b1_t = torch.from_numpy(np.array(net1_leaves, dtype=np.float32)).to(self.device)
                     with torch.no_grad():
                         if is_cuda:
                             with torch.autocast('cuda'):
-                                logits, values = net(batch_states)
+                                l1, v1 = net1(b1_t)
                         else:
-                            logits, values = net(batch_states)
-                            
-                        policies_cpu = logits.cpu().numpy()
-                        values_cpu = values.cpu().numpy()
-                        
-                    tree_results = {idx: {'policies': [], 'values': []} for idx in set(indices)}
-                    for idx, game_idx in enumerate(indices):
-                        tree_results[game_idx]['policies'].append(policies_cpu[idx])
-                        tree_results[game_idx]['values'].append(values_cpu[idx][0])
-                        
-                    for game_idx, res in tree_results.items():
-                        p_arr = np.ascontiguousarray(res['policies'], dtype=np.float32)
-                        v_arr = np.ascontiguousarray(res['values'], dtype=np.float32)
-                        trees[game_idx].submit_results(p_arr, v_arr)
+                            l1, v1 = net1(b1_t)
+                        p1_cpu = l1.cpu().numpy()
+                        v1_cpu = v1.cpu().numpy()
+                    for idx, k in enumerate(net1_k):
+                        all_policies[k] = p1_cpu[idx]
+                        all_values[k] = v1_cpu[idx][0]
+
+                if net2_leaves and net2 is not None:
+                    b2_t = torch.from_numpy(np.array(net2_leaves, dtype=np.float32)).to(self.device)
+                    with torch.no_grad():
+                        if is_cuda:
+                            with torch.autocast('cuda'):
+                                l2, v2 = net2(b2_t)
+                        else:
+                            l2, v2 = net2(b2_t)
+                        p2_cpu = l2.cpu().numpy()
+                        v2_cpu = v2.cpu().numpy()
+                    for idx, k in enumerate(net2_k):
+                        all_policies[k] = p2_cpu[idx]
+                        all_values[k] = v2_cpu[idx][0]
+
+                parallel_mcts.submit_batch(all_policies, all_values)
                         
         p1_score = p1_wins + 0.5 * draws
         win_rate = p1_score / num_games

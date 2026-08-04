@@ -3,6 +3,8 @@
 #include <numeric>
 #include <algorithm>
 #include <stdexcept>
+#include <thread>
+#include <mutex>
 
 MCTSTree::MCTSTree(const GameState& root_state, bool add_noise) 
     : add_noise_flag(add_noise), rng(std::random_device{}()) {
@@ -237,4 +239,80 @@ void MCTSTree::advance(int action) {
     }
     
     pending_leaves.clear();
+}
+
+ParallelMCTS::ParallelMCTS(int num_games, bool add_noise) 
+    : num_games(num_games), add_noise_flag(add_noise) {
+    GameState initial_state;
+    for (int i = 0; i < num_games; ++i) {
+        trees.push_back(std::make_shared<MCTSTree>(initial_state, add_noise));
+    }
+}
+
+void ParallelMCTS::set_state(int game_idx, const GameState& state) {
+    trees[game_idx] = std::make_shared<MCTSTree>(state, add_noise_flag);
+}
+
+void ParallelMCTS::advance(int game_idx, int action) {
+    trees[game_idx]->advance(action);
+}
+
+bool ParallelMCTS::is_done(int game_idx, int n_simulations) const {
+    return trees[game_idx]->is_done(n_simulations);
+}
+
+std::vector<float> ParallelMCTS::root_policy(int game_idx, float temperature) const {
+    return trees[game_idx]->root_policy(temperature);
+}
+
+std::vector<std::array<float, 486>> ParallelMCTS::request_batch(int n_simulations, int batch_per_tree) {
+    std::vector<std::array<float, 486>> global_leaves;
+    leaf_game_mapping.clear();
+    
+    std::mutex mtx;
+    std::vector<std::thread> threads;
+    
+    for (int i = 0; i < num_games; ++i) {
+        if (!trees[i]->is_done(n_simulations)) {
+            threads.emplace_back([this, i, batch_per_tree, &global_leaves, &mtx]() {
+                auto leaves = trees[i]->request_leaves(batch_per_tree);
+                
+                std::lock_guard<std::mutex> lock(mtx);
+                for (const auto& leaf : leaves) {
+                    global_leaves.push_back(leaf);
+                    leaf_game_mapping.push_back(i);
+                }
+            });
+        }
+    }
+    
+    for (auto& t : threads) {
+        t.join();
+    }
+    
+    return global_leaves;
+}
+
+void ParallelMCTS::submit_batch(const std::vector<std::vector<float>>& policies, const std::vector<float>& values) {
+    std::vector<std::vector<std::vector<float>>> tree_policies(num_games);
+    std::vector<std::vector<float>> tree_values(num_games);
+    
+    for (size_t i = 0; i < leaf_game_mapping.size(); ++i) {
+        int game_idx = leaf_game_mapping[i];
+        tree_policies[game_idx].push_back(policies[i]);
+        tree_values[game_idx].push_back(values[i]);
+    }
+    
+    std::vector<std::thread> threads;
+    for (int i = 0; i < num_games; ++i) {
+        if (!tree_policies[i].empty()) {
+            threads.emplace_back([this, i, &tree_policies, &tree_values]() {
+                trees[i]->submit_results(tree_policies[i], tree_values[i]);
+            });
+        }
+    }
+    
+    for (auto& t : threads) {
+        t.join();
+    }
 }

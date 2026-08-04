@@ -17,7 +17,7 @@ class SelfPlayWorker:
         self.temp_moves = temperature_moves
         
         self.states = [zerocross_engine.GameState() for _ in range(self.num_games)]
-        self.trees = [zerocross_engine.MCTSTree(self.states[i], True) for i in range(self.num_games)]
+        self.parallel_mcts = zerocross_engine.ParallelMCTS(self.num_games, True)
         
         self.game_histories = [[] for _ in range(self.num_games)]
         self.completed_games_data = []
@@ -35,19 +35,13 @@ class SelfPlayWorker:
         self.batch_sizes = []
         
         while games_completed < total_games_to_play:
-            leaf_states, active_indices = [], []
             
-            for i in range(self.num_games):
-                if not self.trees[i].is_done(self.simulations):
-                    leaves = self.trees[i].request_leaves(8)
-                    if leaves.shape[0] > 0:
-                        leaf_states.append(leaves)
-                        active_indices.extend([i] * leaves.shape[0])
+            # C++ handles the multithreaded tree traversal and returns a zero-copy NumPy array and mapping
+            leaves, _ = self.parallel_mcts.request_batch(self.simulations, 8)
             
-            if len(leaf_states) > 0:
-                self.batch_sizes.append(sum(l.shape[0] for l in leaf_states))
-                batch_states_np = np.concatenate(leaf_states, axis=0)
-                batch_states = torch.from_numpy(batch_states_np).to(self.device)
+            if leaves.shape[0] > 0:
+                self.batch_sizes.append(leaves.shape[0])
+                batch_states = torch.from_numpy(leaves).to(self.device)
                 
                 with torch.no_grad():
                     if self.is_cuda:
@@ -59,21 +53,15 @@ class SelfPlayWorker:
                     policies_cpu = logits.cpu().numpy()
                     values_cpu = values.cpu().numpy()
                 
-                tree_results = {i: {'policies': [], 'values': []} for i in range(self.num_games)}
-                for idx, tree_idx in enumerate(active_indices):
-                    tree_results[tree_idx]['policies'].append(policies_cpu[idx])
-                    tree_results[tree_idx]['values'].append(values_cpu[idx][0])
-                    
-                for i in range(self.num_games):
-                    if len(tree_results[i]['policies']) > 0:
-                        p_arr = np.ascontiguousarray(tree_results[i]['policies'], dtype=np.float32)
-                        v_arr = np.ascontiguousarray(tree_results[i]['values'], dtype=np.float32)
-                        self.trees[i].submit_results(p_arr, v_arr)
+                # Submit contiguous NumPy arrays directly back to the C++ multithreaded manager
+                p_arr = np.ascontiguousarray(policies_cpu, dtype=np.float32)
+                v_arr = np.ascontiguousarray(values_cpu.flatten(), dtype=np.float32)
+                self.parallel_mcts.submit_batch(p_arr, v_arr)
 
             for i in range(self.num_games):
-                if self.trees[i].is_done(self.simulations):
+                if self.parallel_mcts.is_done(i, self.simulations):
                     temp = 1.0 if len(self.game_histories[i]) < self.temp_moves else 0.0
-                    raw_policy = self.trees[i].root_policy(temp)
+                    raw_policy = self.parallel_mcts.root_policy(i, temp)
                     
                     mcts_policy = np.array(raw_policy, dtype=np.float64)
                     policy_sum = np.sum(mcts_policy)
@@ -88,14 +76,14 @@ class SelfPlayWorker:
                     
                     action = np.argmax(mcts_policy) if temp == 0.0 else np.random.choice(81, p=mcts_policy)
                     self.states[i].play(action)
-                    self.trees[i].advance(action)
+                    self.parallel_mcts.advance(i, action)
                     
                     if self.states[i].is_terminal():
                         self._process_completed_game(i)
                         games_completed += 1
                         
                         self.states[i] = zerocross_engine.GameState()
-                        self.trees[i] = zerocross_engine.MCTSTree(self.states[i], True)
+                        self.parallel_mcts.set_state(i, self.states[i])
                         
         self.avg_batch_size = sum(self.batch_sizes) / len(self.batch_sizes) if self.batch_sizes else 0
         return self.completed_games_data
