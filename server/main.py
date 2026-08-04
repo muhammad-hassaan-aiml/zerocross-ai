@@ -1,44 +1,34 @@
 import os
 import sys
-import torch
 import numpy as np
+import onnxruntime as ort
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 from typing import List
 
-# Ensure Python discovers the compiled C++ engine and network modules
 sys.path.extend(['.', 'build', 'python', '../build', os.path.join(os.getcwd(), 'build')])
-
 import zerocross_engine
-from network import ZeroCrossNet
 
 app = FastAPI(title="ZeroCross AI Engine")
 
-device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
-net = None
+ort_session = None
 models_dir = os.path.join(os.path.dirname(__file__), '../models')
 frontend_dir = os.path.join(os.path.dirname(__file__), 'frontend')
 
-# Hardcode the model path to prevent path traversal attacks
-MODEL_PATH = os.path.join(models_dir, 'best_model.pth')
+MODEL_PATH = os.path.join(models_dir, 'best_model.onnx')
 
 @app.on_event("startup")
 def startup_event():
-    global net
+    global ort_session
     
-    # Fail loudly if the model is missing or 0 bytes
     if not os.path.exists(MODEL_PATH) or os.path.getsize(MODEL_PATH) == 0:
-        raise RuntimeError(f"FATAL: Valid model not found or is empty at {MODEL_PATH}")
+        raise RuntimeError(f"FATAL: Valid ONNX model not found or is empty at {MODEL_PATH}")
 
-    net = ZeroCrossNet()
-    net.load_checkpoint(MODEL_PATH)
-    net.to(device)
-    net.eval()
-    print(f"ZeroCross Engine Server Started. Loaded best_model.pth on {device}.")
+    ort_session = ort.InferenceSession(MODEL_PATH, providers=['CPUExecutionProvider'])
+    print("ZeroCross Engine Server Started. Loaded best_model.onnx on CPU via ONNX Runtime.")
 
-# Serve frontend static assets if directory exists
 if os.path.exists(frontend_dir):
     app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 
@@ -56,7 +46,6 @@ def read_root():
         )
     return {"message": "ZeroCross AI Engine API Running"}
 
-# Input validation and compute capping
 class MoveRequest(BaseModel):
     board: List[int]
     active_grid: int = Field(ge=-1, le=8)
@@ -86,23 +75,33 @@ def get_best_move(req: MoveRequest):
     while not tree.is_done(req.simulations):
         leaf = tree.request_leaf()
         if leaf is not None:
-            leaf_tensor = torch.tensor(leaf, dtype=torch.float32).view(6, 81)
-            c0 = leaf_tensor[0].bool()
-            c1 = leaf_tensor[1].bool()
-            c2 = leaf_tensor[2].bool()
+            leaf_np = np.array(leaf, dtype=np.float32).reshape(1, 6, 9, 9)
+            
+            c0 = leaf_np[0, 0].flatten().astype(bool)
+            c1 = leaf_np[0, 1].flatten().astype(bool)
+            c2 = leaf_np[0, 2].flatten().astype(bool)
             legal_mask = c2 & ~c0 & ~c1
             
-            prob_list, val_scalar = net.predict(leaf, legal_mask)
-            tree.submit_result(prob_list, val_scalar)
+            ort_inputs = {ort_session.get_inputs()[0].name: leaf_np}
+            logits, values = ort_session.run(None, ort_inputs)
+            
+            logits_flat = logits.flatten()
+            logits_flat[~legal_mask] = -10000.0
+            
+            e_x = np.exp(logits_flat - np.max(logits_flat))
+            probs = e_x / e_x.sum(axis=-1)
+            
+            tree.submit_result(probs.tolist(), float(values[0][0]))
             
     policy = tree.root_policy(0.0)
     best_move = int(np.argmax(policy))
     
-    # Get current root value prediction for UI win probability
-    _, win_prob = net.predict(state.encode(), state.legal_mask())
+    root_state_np = np.array(state.encode(), dtype=np.float32).reshape(1, 6, 9, 9)
+    ort_inputs = {ort_session.get_inputs()[0].name: root_state_np}
+    _, root_val = ort_session.run(None, ort_inputs)
     
     return {
         "move": best_move,
         "policy": np.asarray(policy).tolist(),
-        "value": float(win_prob)
+        "value": float(root_val[0][0])
     }

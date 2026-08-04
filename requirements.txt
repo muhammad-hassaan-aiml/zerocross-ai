@@ -6,3 +6,4 @@ numpy
 pandas
 matplotlib
 pybind11
+onnxruntime
