@@ -46,25 +46,52 @@ if(BUILD_WITH_SANITIZERS)
     target_link_options(test_stress PRIVATE -fsanitize=address -fsanitize=undefined)
 endif()
 
-# Automatically discover pybind11's CMake directory from the active Python environment
-execute_process(
-    COMMAND python -c "import pybind11; print(pybind11.get_cmake_dir())"
-    OUTPUT_VARIABLE pybind11_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-    RESULT_VARIABLE pybind11_status
-)
+if(EMSCRIPTEN)
+    # WebAssembly Build Configuration
+    message(STATUS "Emscripten detected: Building WebAssembly module...")
+    
+    add_executable(zerocross_wasm
+        src/wasm_bindings.cpp
+        src/game_state.cpp
+        src/mcts.cpp
+    )
+    
+    target_include_directories(zerocross_wasm PRIVATE include)
+    target_compile_options(zerocross_wasm PRIVATE -O3)
+    
+    # Embind flags and memory configurations
+    set_target_properties(zerocross_wasm PROPERTIES OUTPUT_NAME "zerocross")
+    target_link_options(zerocross_wasm PRIVATE
+        --bind
+        -s ALLOW_MEMORY_GROWTH=1
+        -s MODULARIZE=1
+        -s EXPORT_NAME="createZeroCrossModule"
+        -s ENVIRONMENT="web"
+    )
+else()
+    # Native Python Build Configuration
+    message(STATUS "Native build detected: Building pybind11 module...")
+    
+    # Automatically discover pybind11's CMake directory from the active Python environment
+    execute_process(
+        COMMAND python -c "import pybind11; print(pybind11.get_cmake_dir())"
+        OUTPUT_VARIABLE pybind11_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE pybind11_status
+    )
 
-if(NOT pybind11_status EQUAL 0)
-    message(FATAL_ERROR "pybind11 not found! Hint: Run 'python -m pip install pybind11' in your active Python environment before building.")
+    if(NOT pybind11_status EQUAL 0)
+        message(FATAL_ERROR "pybind11 not found! Hint: Run 'python -m pip install pybind11' in your active Python environment before building.")
+    endif()
+
+    find_package(pybind11 REQUIRED)
+
+    pybind11_add_module(zerocross_engine
+        src/bindings.cpp
+        src/game_state.cpp
+        src/mcts.cpp
+    )
+    target_include_directories(zerocross_engine PRIVATE include)
+    target_compile_options(zerocross_engine PRIVATE -O3 -fPIC)
 endif()
-
-find_package(pybind11 REQUIRED)
-
-pybind11_add_module(zerocross_engine
-    src/bindings.cpp
-    src/game_state.cpp
-    src/mcts.cpp
-)
-target_include_directories(zerocross_engine PRIVATE include)
-target_compile_options(zerocross_engine PRIVATE -O3 -fPIC)
