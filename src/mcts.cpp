@@ -9,7 +9,7 @@ MCTSTree::MCTSTree(const GameState& root_state, bool add_noise)
     
     root = std::make_shared<MCTSNode>();
     root->state = root_state;
-    pending_leaf = nullptr;
+    pending_leaves.clear();
 }
 
 std::vector<float> MCTSTree::generate_dirichlet(int num_valid_actions) {
@@ -22,7 +22,6 @@ std::vector<float> MCTSTree::generate_dirichlet(int num_valid_actions) {
         sum += noise[i];
     }
     
-    // Prevent division by zero in the rare case gamma outputs all zeros
     if (sum < 1e-6f) sum = 1e-6f;
     
     for (int i = 0; i < num_valid_actions; ++i) {
@@ -33,150 +32,146 @@ std::vector<float> MCTSTree::generate_dirichlet(int num_valid_actions) {
 }
 
 float MCTSTree::calculate_puct(std::shared_ptr<MCTSNode> parent, std::shared_ptr<MCTSNode> child) const {
-    // Q is the average value of the child node. 
-    // CRITICAL: We must INVERT the child's value. The child's value is stored from the 
-    // opponent's perspective. Maximizing the opponent's loss means maximizing -Q.
-    float q_value = (child->visit_count > 0) ? -(child->total_value / child->visit_count) : 0.0f;
+    int child_visits = child->visit_count + child->virtual_loss;
+    int parent_visits = parent->visit_count + parent->virtual_loss;
+
+    float q_value = (child_visits > 0) ? -(child->total_value + child->virtual_loss) / child_visits : 0.0f;
     
-    // DeepMind's Dynamic Exploration Constant (replaces static C_PUCT)
-    float c_puct = 1.25f + std::log((parent->visit_count + 19652.0f + 1.0f) / 19652.0f);
-    
-    // U is the exploration term based on the parent's visit count and the child's prior probability
-    float u_value = c_puct * child->prior_p * std::sqrt(static_cast<float>(parent->visit_count)) / (1.0f + child->visit_count);
+    float c_puct = 1.25f + std::log((parent_visits + 19652.0f + 1.0f) / 19652.0f);
+    float u_value = c_puct * child->prior_p * std::sqrt(static_cast<float>(parent_visits)) / (1.0f + child_visits);
     
     return q_value + u_value;
 }
 
-std::optional<std::array<float, 486>> MCTSTree::request_leaf() {
-    // Strict invariant check: Only one outstanding request at a time
-    if (pending_leaf != nullptr) {
-        return pending_leaf->state.encode();
-    }
+std::vector<std::array<float, 486>> MCTSTree::request_leaves(int batch_size) {
+    std::vector<std::array<float, 486>> encoded_states;
+    if (!pending_leaves.empty()) return encoded_states; 
 
-    std::shared_ptr<MCTSNode> current = root;
+    for (int i = 0; i < batch_size; ++i) {
+        std::shared_ptr<MCTSNode> current = root;
+        std::vector<std::shared_ptr<MCTSNode>> search_path;
+        
+        while (current->is_expanded()) {
+            search_path.push_back(current);
+            float best_puct = -1e9f;
+            std::shared_ptr<MCTSNode> best_child = current->children[0]; 
 
-    // Traverse the tree using PUCT until an unexpanded leaf is found
-    while (current->is_expanded()) {
-        float best_puct = -1e9f;
-        // SAFE FALLBACK: Always guarantee at least the first child is selected if math fails
-        std::shared_ptr<MCTSNode> best_child = current->children[0]; 
-
-        for (const auto& child : current->children) {
-            float puct = calculate_puct(current, child);
-            // Ignore NaN values completely to prevent pointer corruption
-            if (puct > best_puct && !std::isnan(puct)) {
-                best_puct = puct;
-                best_child = child;
+            for (const auto& child : current->children) {
+                float puct = calculate_puct(current, child);
+                if (puct > best_puct && !std::isnan(puct)) {
+                    best_puct = puct;
+                    best_child = child;
+                }
             }
+            current = best_child;
         }
-        current = best_child;
-    }
+        search_path.push_back(current);
 
-    // Handle terminal states instantly without neural network evaluation
-    if (current->state.is_terminal()) {
-        // We backpropagate the exact game outcome.
-        int winner = current->state.get_winner();
-        int current_player = current->state.get_current_player();
-        
-        float terminal_value = 0.0f;
-        // 0 represents a draw. If there's a winner, assign 1.0 or -1.0 based on perspective.
-        if (winner != 0) { 
-            terminal_value = (winner == current_player) ? 1.0f : -1.0f;
-        }
-        
-        // Turn parity inversion backpropagation
-        std::shared_ptr<MCTSNode> backprop_node = current;
-        
-        while (backprop_node != nullptr) {
-            backprop_node->visit_count++;
-            if (backprop_node->state.get_current_player() == current_player) {
-                backprop_node->total_value += terminal_value; 
-            } else {
-                backprop_node->total_value -= terminal_value; 
+        if (current->state.is_terminal()) {
+            int winner = current->state.get_winner();
+            int current_player = current->state.get_current_player();
+            
+            float terminal_value = 0.0f;
+            if (winner != 0) { 
+                terminal_value = (winner == current_player) ? 1.0f : -1.0f;
             }
-            backprop_node = backprop_node->parent.lock();
+            
+            for (auto& node : search_path) {
+                node->visit_count++;
+                if (node->state.get_current_player() == current_player) {
+                    node->total_value += terminal_value; 
+                } else {
+                    node->total_value -= terminal_value; 
+                }
+            }
+            continue; 
+        }
+
+        for (auto& node : search_path) {
+            node->virtual_loss++;
         }
         
-        return std::nullopt; 
+        pending_leaves.push_back(current);
+        encoded_states.push_back(current->state.encode());
     }
 
-    // Valid, non-terminal leaf found. Mark as pending and yield state for evaluation.
-    pending_leaf = current;
-    return pending_leaf->state.encode();
+    return encoded_states;
 }
 
-void MCTSTree::submit_result(const std::vector<float>& policy, float value) {
-    if (pending_leaf == nullptr) {
-        throw std::runtime_error("submit_result called but no leaf is pending.");
+void MCTSTree::submit_results(const std::vector<std::vector<float>>& policies, const std::vector<float>& values) {
+    if (policies.size() != pending_leaves.size() || values.size() != pending_leaves.size()) {
+        throw std::runtime_error("submit_results called with mismatched batch sizes.");
     }
 
-    auto mask = pending_leaf->state.legal_mask();
-    std::vector<int> legal_actions;
-    
-    // --- NUMERICAL STABILITY FIX ---
-    // Find the maximum logit among legal moves to prevent std::exp overflow to infinity
-    float max_logit = -1e9f;
-    for (int i = 0; i < GameState::NUM_CELLS; ++i) {
-        if (mask[i] && policy[i] > max_logit) {
-            max_logit = policy[i];
+    for (size_t b = 0; b < pending_leaves.size(); ++b) {
+        auto leaf = pending_leaves[b];
+        const auto& policy = policies[b];
+        float value = values[b];
+
+        auto mask = leaf->state.legal_mask();
+        std::vector<int> legal_actions;
+        
+        float max_logit = -1e9f;
+        for (int i = 0; i < GameState::NUM_CELLS; ++i) {
+            if (mask[i] && policy[i] > max_logit) {
+                max_logit = policy[i];
+            }
         }
-    }
 
-    float policy_sum = 0.0f;
-    for (int i = 0; i < GameState::NUM_CELLS; ++i) {
-        if (mask[i]) {
-            legal_actions.push_back(i);
-            policy_sum += std::exp(policy[i] - max_logit); // Safe softmax subtraction
+        float policy_sum = 0.0f;
+        for (int i = 0; i < GameState::NUM_CELLS; ++i) {
+            if (mask[i]) {
+                legal_actions.push_back(i);
+                policy_sum += std::exp(policy[i] - max_logit);
+            }
         }
-    }
 
-    bool is_root = (pending_leaf == root);
-    std::vector<float> noise;
-    
-    if (is_root && add_noise_flag) {
-        noise = generate_dirichlet(legal_actions.size());
-    }
-
-    // Expand the pending leaf
-    for (size_t i = 0; i < legal_actions.size(); ++i) {
-        int action = legal_actions[i];
-        float prior = std::exp(policy[action] - max_logit) / policy_sum;
+        bool is_root = (leaf == root);
+        std::vector<float> noise;
         
         if (is_root && add_noise_flag) {
-            prior = (1.0f - DIRICHLET_EPSILON) * prior + DIRICHLET_EPSILON * noise[i];
+            noise = generate_dirichlet(legal_actions.size());
         }
 
-        auto child = std::make_shared<MCTSNode>();
-        child->parent = pending_leaf; // Assigns to weak_ptr safely
-        child->prior_p = prior;
-        child->action_taken = action;
-        
-        // Clone state and apply the move
-        child->state = pending_leaf->state;
-        child->state.play(action);
+        if (!leaf->is_expanded()) {
+            for (size_t i = 0; i < legal_actions.size(); ++i) {
+                int action = legal_actions[i];
+                float prior = std::exp(policy[action] - max_logit) / policy_sum;
+                
+                if (is_root && add_noise_flag) {
+                    prior = (1.0f - DIRICHLET_EPSILON) * prior + DIRICHLET_EPSILON * noise[i];
+                }
 
-        pending_leaf->children.push_back(child);
-    }
+                auto child = std::make_shared<MCTSNode>();
+                child->parent = leaf; 
+                child->prior_p = prior;
+                child->action_taken = action;
+                
+                child->state = leaf->state;
+                child->state.play(action);
 
-    // Backpropagate the value up the tree
-    std::shared_ptr<MCTSNode> backprop_node = pending_leaf;
-    int evaluated_player = pending_leaf->state.get_current_player();
-
-    while (backprop_node != nullptr) {
-        backprop_node->visit_count++;
-        
-        // Zero-sum perspective flip
-        if (backprop_node->state.get_current_player() == evaluated_player) {
-            backprop_node->total_value += value;
-        } else {
-            backprop_node->total_value -= value;
+                leaf->children.push_back(child);
+            }
         }
-        
-        backprop_node = backprop_node->parent.lock(); // Elevate weak_ptr to shared_ptr for traversal
-    }
 
-    // Clear the pending status to allow the next request
-    pending_leaf = nullptr;
+        std::shared_ptr<MCTSNode> backprop_node = leaf;
+        int evaluated_player = leaf->state.get_current_player();
+
+        while (backprop_node != nullptr) {
+            backprop_node->visit_count++;
+            backprop_node->virtual_loss--;
+            
+            if (backprop_node->state.get_current_player() == evaluated_player) {
+                backprop_node->total_value += value;
+            } else {
+                backprop_node->total_value -= value;
+            }
+            
+            backprop_node = backprop_node->parent.lock(); 
+        }
+    }
+    
+    pending_leaves.clear();
 }
 
 bool MCTSTree::is_done(int n_simulations) const {
@@ -191,7 +186,6 @@ std::vector<float> MCTSTree::root_policy(float temperature) const {
     }
 
     if (temperature < 1e-3f) {
-        // Temperature approaches 0: deterministic play (argmax)
         int best_action = -1;
         int max_visits = -1;
         
@@ -205,7 +199,6 @@ std::vector<float> MCTSTree::root_policy(float temperature) const {
             policy[best_action] = 1.0f;
         }
     } else {
-        // Temperature-scaled exploration
         float sum = 0.0f;
         std::vector<float> adjusted_visits(root->children.size());
         
@@ -233,13 +226,9 @@ void MCTSTree::advance(int action) {
     }
 
     if (next_root != nullptr) {
-        // Shift root down the selected path. 
-        // The old root's reference count drops, and unselected subtrees are automatically destroyed.
         root = next_root;
-        root->parent.reset(); // The new root has no parent
+        root->parent.reset(); 
     } else {
-        // The requested action is outside the explored tree (e.g., unexpected opponent move).
-        // Create a new root from scratch to recover safely.
         GameState next_state = root->state;
         next_state.play(action);
         
@@ -247,5 +236,5 @@ void MCTSTree::advance(int action) {
         root->state = next_state;
     }
     
-    pending_leaf = nullptr;
+    pending_leaves.clear();
 }

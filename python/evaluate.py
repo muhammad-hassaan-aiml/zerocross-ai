@@ -19,7 +19,6 @@ class Evaluator:
         return -400.0 * math.log10((1.0 / win_rate) - 1.0)
 
     def get_lower_confidence_bound(self, win_rate, total_games, z=1.28):
-        # 1.28 Z-score equates to roughly 90% confidence level
         if total_games == 0:
             return 0.0
         variance = (win_rate * (1.0 - win_rate)) / total_games
@@ -68,12 +67,12 @@ class Evaluator:
                         trees[i] = zerocross_engine.MCTSTree(states[i], False)
                         
                     if not trees[i].is_done(sims):
-                        leaf = trees[i].request_leaf()
-                        if leaf is not None:
+                        leaves = trees[i].request_leaves(8)
+                        if len(leaves) > 0:
                             if is_p1_turn:
-                                net1_reqs.append((i, leaf))
+                                net1_reqs.extend([(i, leaf) for leaf in leaves])
                             else:
-                                net2_reqs.append((i, leaf))
+                                net2_reqs.extend([(i, leaf) for leaf in leaves])
                     else:
                         temp = 1.0 if ply_counts[i] < 6 else 0.0
                         raw_policy = trees[i].root_policy(temp)
@@ -101,11 +100,6 @@ class Evaluator:
                     
                     batch_states = torch.tensor(np.array(leaves), dtype=torch.float32).view(-1, 6, 9, 9).to(self.device)
                     
-                    c0 = batch_states[:, 0].flatten(start_dim=1).bool()
-                    c1 = batch_states[:, 1].flatten(start_dim=1).bool()
-                    c2 = batch_states[:, 2].flatten(start_dim=1).bool()
-                    batch_masks = c2 & ~c0 & ~c1
-                    
                     with torch.no_grad():
                         if is_cuda:
                             with torch.autocast('cuda'):
@@ -113,12 +107,16 @@ class Evaluator:
                         else:
                             logits, values = net(batch_states)
                             
-                        masked_logits = logits.masked_fill(~batch_masks, -1e4)
-                        policies_cpu = masked_logits.cpu().numpy()
+                        policies_cpu = logits.cpu().numpy()
                         values_cpu = values.cpu().numpy()
                         
+                    tree_results = {idx: {'policies': [], 'values': []} for idx in set(indices)}
                     for idx, game_idx in enumerate(indices):
-                        trees[game_idx].submit_result(policies_cpu[idx].tolist(), float(values_cpu[idx][0]))
+                        tree_results[game_idx]['policies'].append(policies_cpu[idx].tolist())
+                        tree_results[game_idx]['values'].append(float(values_cpu[idx][0]))
+                        
+                    for game_idx, res in tree_results.items():
+                        trees[game_idx].submit_results(res['policies'], res['values'])
                         
         p1_score = p1_wins + 0.5 * draws
         win_rate = p1_score / num_games

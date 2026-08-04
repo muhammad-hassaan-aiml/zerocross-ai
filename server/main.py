@@ -74,17 +74,14 @@ def get_best_move(req: MoveRequest):
     tree = zerocross_engine.MCTSTree(state, False)
     
     while not tree.is_done(req.simulations):
-        leaf = tree.request_leaf()
-        if leaf is not None:
-            leaf_np = np.array(leaf, dtype=np.float32).reshape(1, 6, 9, 9)
+        leaves = tree.request_leaves(8)
+        if len(leaves) > 0:
+            leaves_np = np.array(leaves, dtype=np.float32).reshape(-1, 6, 9, 9)
             
-            ort_inputs = {ort_session.get_inputs()[0].name: leaf_np}
+            ort_inputs = {ort_session.get_inputs()[0].name: leaves_np}
             logits, values = ort_session.run(None, ort_inputs)
             
-            raw_logits = logits.flatten().tolist()
-            raw_value = float(values[0][0])
-            
-            tree.submit_result(raw_logits, raw_value)
+            tree.submit_results(logits.tolist(), values.flatten().tolist())
             
     policy = tree.root_policy(0.0)
     best_move = int(np.argmax(policy))

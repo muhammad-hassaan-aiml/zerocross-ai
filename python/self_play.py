@@ -5,7 +5,6 @@ import os
 import sys
 
 sys.path.extend(['.', 'build', '../build', os.path.join(os.getcwd(), 'build')])
-
 import zerocross_engine
 from network import ZeroCrossNet
 from augment import get_symmetries
@@ -40,19 +39,14 @@ class SelfPlayWorker:
             
             for i in range(self.num_games):
                 if not self.trees[i].is_done(self.simulations):
-                    leaf = self.trees[i].request_leaf()
-                    if leaf is not None:
-                        leaf_states.append(leaf)
-                        active_indices.append(i)
+                    leaves = self.trees[i].request_leaves(8)
+                    if len(leaves) > 0:
+                        leaf_states.extend(leaves)
+                        active_indices.extend([i] * len(leaves))
             
             if len(leaf_states) > 0:
                 self.batch_sizes.append(len(leaf_states))
                 batch_states = torch.tensor(np.array(leaf_states), dtype=torch.float32).view(-1, 6, 9, 9).to(self.device)
-                
-                c0 = batch_states[:, 0].flatten(start_dim=1).bool()
-                c1 = batch_states[:, 1].flatten(start_dim=1).bool()
-                c2 = batch_states[:, 2].flatten(start_dim=1).bool()
-                batch_masks = c2 & ~c0 & ~c1
                 
                 with torch.no_grad():
                     if self.is_cuda:
@@ -61,13 +55,17 @@ class SelfPlayWorker:
                     else:
                         logits, values = self.net(batch_states)
                         
-                    masked_logits = logits.masked_fill(~batch_masks, -1e4)
-                    
-                    policies_cpu = masked_logits.cpu().numpy()
+                    policies_cpu = logits.cpu().numpy()
                     values_cpu = values.cpu().numpy()
                 
+                tree_results = {i: {'policies': [], 'values': []} for i in range(self.num_games)}
                 for idx, tree_idx in enumerate(active_indices):
-                    self.trees[tree_idx].submit_result(policies_cpu[idx].tolist(), float(values_cpu[idx][0]))
+                    tree_results[tree_idx]['policies'].append(policies_cpu[idx].tolist())
+                    tree_results[tree_idx]['values'].append(float(values_cpu[idx][0]))
+                    
+                for i in range(self.num_games):
+                    if len(tree_results[i]['policies']) > 0:
+                        self.trees[i].submit_results(tree_results[i]['policies'], tree_results[i]['values'])
 
             for i in range(self.num_games):
                 if self.trees[i].is_done(self.simulations):
