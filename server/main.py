@@ -75,13 +75,13 @@ def get_best_move(req: MoveRequest):
     
     while not tree.is_done(req.simulations):
         leaves = tree.request_leaves(8)
-        if len(leaves) > 0:
-            leaves_np = np.array(leaves, dtype=np.float32).reshape(-1, 6, 9, 9)
-            
-            ort_inputs = {ort_session.get_inputs()[0].name: leaves_np}
+        if leaves.shape[0] > 0:
+            ort_inputs = {ort_session.get_inputs()[0].name: leaves}
             logits, values = ort_session.run(None, ort_inputs)
             
-            tree.submit_results(logits.tolist(), values.flatten().tolist())
+            logits_np = np.ascontiguousarray(logits, dtype=np.float32)
+            values_np = np.ascontiguousarray(values.flatten(), dtype=np.float32)
+            tree.submit_results(logits_np, values_np)
             
     policy = tree.root_policy(0.0)
     best_move = int(np.argmax(policy))

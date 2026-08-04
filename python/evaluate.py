@@ -68,11 +68,11 @@ class Evaluator:
                         
                     if not trees[i].is_done(sims):
                         leaves = trees[i].request_leaves(8)
-                        if len(leaves) > 0:
+                        if leaves.shape[0] > 0:
                             if is_p1_turn:
-                                net1_reqs.extend([(i, leaf) for leaf in leaves])
+                                net1_reqs.append((i, leaves))
                             else:
-                                net2_reqs.extend([(i, leaf) for leaf in leaves])
+                                net2_reqs.append((i, leaves))
                     else:
                         temp = 1.0 if ply_counts[i] < 6 else 0.0
                         raw_policy = trees[i].root_policy(temp)
@@ -95,10 +95,14 @@ class Evaluator:
                         
             for net, reqs in [(net1, net1_reqs), (net2, net2_reqs)]:
                 if net is not None and len(reqs) > 0:
-                    indices = [req[0] for req in reqs]
-                    leaves = [req[1] for req in reqs]
-                    
-                    batch_states = torch.tensor(np.array(leaves), dtype=torch.float32).view(-1, 6, 9, 9).to(self.device)
+                    indices = []
+                    leaves_list = []
+                    for req in reqs:
+                        indices.extend([req[0]] * req[1].shape[0])
+                        leaves_list.append(req[1])
+                        
+                    batch_states_np = np.concatenate(leaves_list, axis=0)
+                    batch_states = torch.from_numpy(batch_states_np).to(self.device)
                     
                     with torch.no_grad():
                         if is_cuda:
@@ -112,11 +116,13 @@ class Evaluator:
                         
                     tree_results = {idx: {'policies': [], 'values': []} for idx in set(indices)}
                     for idx, game_idx in enumerate(indices):
-                        tree_results[game_idx]['policies'].append(policies_cpu[idx].tolist())
-                        tree_results[game_idx]['values'].append(float(values_cpu[idx][0]))
+                        tree_results[game_idx]['policies'].append(policies_cpu[idx])
+                        tree_results[game_idx]['values'].append(values_cpu[idx][0])
                         
                     for game_idx, res in tree_results.items():
-                        trees[game_idx].submit_results(res['policies'], res['values'])
+                        p_arr = np.ascontiguousarray(res['policies'], dtype=np.float32)
+                        v_arr = np.ascontiguousarray(res['values'], dtype=np.float32)
+                        trees[game_idx].submit_results(p_arr, v_arr)
                         
         p1_score = p1_wins + 0.5 * draws
         win_rate = p1_score / num_games

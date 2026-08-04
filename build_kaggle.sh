@@ -3,7 +3,7 @@
 set -e
 
 echo "Step 1: Installing Python Dependencies"
-python -m pip install --no-deps pybind11 pandas matplotlib
+python -m pip install --no-deps pybind11 pandas matplotlib numpy
 
 echo "Step 2: Building C++ Engine"
 mkdir -p build
@@ -20,6 +20,7 @@ cd ..
 python - <<'EOF'
 import sys
 import traceback
+import numpy as np
 
 sys.path.extend(['.', 'build'])
 
@@ -60,14 +61,18 @@ except Exception:
 
 # MCTS smoke test
 t = z.MCTSTree(s)
-leaf = t.request_leaf()
-assert leaf is not None, "Initial request_leaf should not be None."
+leaves = t.request_leaves(8)
+assert leaves.shape[0] > 0, "Initial request_leaves should return a batch greater than 0."
 
 try:
-    t.submit_result([0.0]*81, 0.0)
-    print("SUCCESS: MCTSTree request_leaf and submit_result passed.")
+    batch_size = leaves.shape[0]
+    dummy_policies = np.zeros((batch_size, 81), dtype=np.float32)
+    dummy_values = np.zeros(batch_size, dtype=np.float32)
+    
+    t.submit_results(dummy_policies, dummy_values)
+    print("SUCCESS: MCTSTree request_leaves and submit_results passed.")
 except Exception:
-    print("FATAL: submit_result raised an exception.")
+    print("FATAL: submit_results raised an exception.")
     traceback.print_exc()
     sys.exit(1)
 EOF
