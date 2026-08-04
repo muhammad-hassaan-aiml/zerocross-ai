@@ -7,16 +7,14 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-
 models/*.pth
 models/*.pt
 models/*.csv
 !models/best_model.pth
 !models/best_model.onnx
-
+!models/best_model.onnx.data
 data/replay_buffer/*
 !data/replay_buffer/.gitkeep
-
 .ipynb_checkpoints/
 .DS_Store
 .vscode/

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import List
 
 sys.path.extend(['.', 'build', 'python', '../build', os.path.join(os.getcwd(), 'build')])
+
 import zerocross_engine
 
 app = FastAPI(title="ZeroCross AI Engine")
@@ -77,21 +78,13 @@ def get_best_move(req: MoveRequest):
         if leaf is not None:
             leaf_np = np.array(leaf, dtype=np.float32).reshape(1, 6, 9, 9)
             
-            c0 = leaf_np[0, 0].flatten().astype(bool)
-            c1 = leaf_np[0, 1].flatten().astype(bool)
-            c2 = leaf_np[0, 2].flatten().astype(bool)
-            legal_mask = c2 & ~c0 & ~c1
-            
             ort_inputs = {ort_session.get_inputs()[0].name: leaf_np}
             logits, values = ort_session.run(None, ort_inputs)
             
-            logits_flat = logits.flatten()
-            logits_flat[~legal_mask] = -10000.0
+            raw_logits = logits.flatten().tolist()
+            raw_value = float(values[0][0])
             
-            e_x = np.exp(logits_flat - np.max(logits_flat))
-            probs = e_x / e_x.sum(axis=-1)
-            
-            tree.submit_result(probs.tolist(), float(values[0][0]))
+            tree.submit_result(raw_logits, raw_value)
             
     policy = tree.root_policy(0.0)
     best_move = int(np.argmax(policy))
