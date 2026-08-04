@@ -59,14 +59,14 @@ if(EMSCRIPTEN)
     target_include_directories(zerocross_wasm PRIVATE include)
     target_compile_options(zerocross_wasm PRIVATE -O3)
     
-    # Embind flags and memory configurations
+    # Embind flags and memory configurations (No spaces after -s to prevent CMake parsing bugs)
     set_target_properties(zerocross_wasm PROPERTIES OUTPUT_NAME "zerocross")
     target_link_options(zerocross_wasm PRIVATE
         --bind
-        -s ALLOW_MEMORY_GROWTH=1
-        -s MODULARIZE=1
-        -s EXPORT_NAME="createZeroCrossModule"
-        -s ENVIRONMENT="web"
+        -sALLOW_MEMORY_GROWTH=1
+        -sMODULARIZE=1
+        -sEXPORT_NAME=createZeroCrossModule
+        -sENVIRONMENT=web
     )
 else()
     # Native Python Build Configuration

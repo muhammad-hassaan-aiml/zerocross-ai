@@ -18,4 +18,5 @@ data/replay_buffer/*
 .ipynb_checkpoints/
 .DS_Store
 .vscode/
-models/*.json
+models/*.jsonemsdk/
+build_wasm/
