@@ -4,10 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#1e332a">
-<title>ZeroCross — Ultimate Tic-Tac-Toe Engine</title>
+<title>ZeroCross | Ultimate Tic-Tac-Toe Engine</title>
 <meta name="description" content="Play Ultimate Tic-Tac-Toe against ZeroCross, a self-taught AlphaZero-style engine.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%231e332a'/%3E%3Cg stroke='%23eef0e2' stroke-width='6' stroke-linecap='round'%3E%3Cline x1='34' y1='10' x2='34' y2='90'/%3E%3Cline x1='66' y1='10' x2='66' y2='90'/%3E%3Cline x1='10' y1='34' x2='90' y2='34'/%3E%3Cline x1='10' y1='66' x2='90' y2='66'/%3E%3C/g%3E%3Cg stroke='%23f0a8a0' stroke-width='7' stroke-linecap='round'%3E%3Cline x1='44' y1='44' x2='56' y2='56'/%3E%3Cline x1='56' y1='44' x2='44' y2='56'/%3E%3C/g%3E%3Ccircle cx='22' cy='22' r='7' fill='none' stroke='%239fd3e8' stroke-width='6'/%3E%3C/svg%3E">
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+<script src="zerocross.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
@@ -115,6 +117,12 @@ body {
 }
 .macro-inactive { opacity: 0.55; }
 
+/* UI FIX: Fade out micro cells when a macro grid is already won */
+.macro-grid.decided .micro-cell {
+  opacity: 0.15;
+  pointer-events: none;
+}
+
 .micro-cell {
   appearance: none;
   background: transparent;
@@ -133,14 +141,10 @@ body {
 .micro-cell:hover:not(:disabled) { background: rgba(238, 240, 226, 0.06); cursor: crosshair; }
 .micro-cell:disabled { cursor: default; }
 .micro-cell:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
-.micro-cell.cell-last::after {
-  content: '';
-  position: absolute;
-  inset: 2px;
-  border-radius: 2px;
-  border: 1px solid var(--chalk-yellow);
-  opacity: 0.55;
-  pointer-events: none;
+
+/* UI FIX: Clean background glow instead of broken ::after elements */
+.micro-cell.cell-last {
+  background: rgba(232, 209, 122, 0.2);
 }
 
 .mark { width: 66%; height: 66%; overflow: visible; }
@@ -306,6 +310,7 @@ body {
 }
 .toggle-switch.on .toggle-knob { transform: translateX(17px); }
 
+/* UI FIX: Removed transform from standard transition to stop text blurring */
 .icon-btn {
   display: flex;
   align-items: center;
@@ -319,7 +324,7 @@ body {
   font-size: 0.7rem;
   letter-spacing: 0.06em;
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease, transform 0.2s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
 .icon-btn:hover { color: var(--chalk); border-color: var(--chalk-dim); background: rgba(0, 0, 0, 0.32); }
 .icon-btn svg { transition: transform 0.4s ease; flex-shrink: 0; }
@@ -486,9 +491,10 @@ body {
           <button onclick="startGame('O')" class="chalk-btn side-btn side-btn-o">Play O</button>
         </div>
         <p class="eyebrow mt-2" style="text-transform:none; letter-spacing:0;">Coin toss decides who opens the board.</p>
+        
         <div class="active-model-note">
           <span class="flex-shrink-0">Engine:</span>
-          <span id="activeModelNote" class="truncate min-w-0">best_model.pth</span>
+          <span id="activeModelNote" class="truncate min-w-0">best_model.onnx</span>
         </div>
       </div>
 
@@ -497,8 +503,9 @@ body {
           <span class="eyebrow">Status</span>
           <span id="moveCount" class="mono text-xs" style="color:var(--chalk-dim)"></span>
         </div>
-        <p id="statusMessage" class="text-lg font-bold h-7 flex items-center status-pending">Ready — pick a side.</p>
+        <p id="statusMessage" class="text-lg font-bold h-7 flex items-center status-pending">Loading AI Engine...</p>
         <p id="statusHint" class="status-hint hidden"></p>
+
         <div id="rosterRow" class="mono text-xs mb-4" style="display:none; color:var(--chalk-dim)">
           You <span id="rosterYouMark" class="mark-chip chip-x">X</span>
           &nbsp;·&nbsp; Engine <span id="rosterAiMark" class="mark-chip chip-o">O</span>
@@ -538,7 +545,6 @@ body {
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
     </button>
   </div>
-
   <div class="drawer-body">
     <div class="drawer-section">
       <span class="eyebrow block mb-2">Engine Difficulty</span>
@@ -551,13 +557,11 @@ body {
         <svg class="select-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
       </div>
     </div>
-
     <div class="drawer-section">
       <span class="eyebrow block mb-2">Interface Theme</span>
       <div class="theme-grid" id="themeGrid"></div>
       <p class="eyebrow mt-2" style="text-transform:none; letter-spacing:0;">Hover (or tap) a swatch to preview it on the board.</p>
     </div>
-
     <div class="drawer-section">
       <span class="eyebrow block mb-2">Sound</span>
       <button type="button" class="toggle-row" id="soundToggleRow" onclick="toggleSound()" aria-pressed="true">
@@ -572,24 +576,25 @@ body {
 let board = new Array(81).fill(0);
 let macroStatus = new Array(9).fill(0);
 let activeGrid = -1;
-
 let humanInternal = 1;
 let aiInternal = -1;
 let humanSymbol = 'X';
 let aiSymbol = 'O';
-
 let currentTurn = 1;
 let gameActive = false;
 let lastMoveIdx = -1;
 let moveCount = 0;
 let freeMoveRule = false;
 
+let wasmModule = null;
+let ortSession = null;
+let engineReady = false;
+
 const difficultySimulations = {
   easy: 50,
   medium: 200,
   hard: 800
 };
-
 let currentDifficulty = localStorage.getItem('zc_difficulty') || 'medium';
 
 const themes = {
@@ -785,6 +790,7 @@ function applyThemeVariables(vars) {
 
 function previewTheme(key) { if (themes[key]) applyThemeVariables(themes[key].vars); }
 function revertPreview() { applyThemeVariables(themes[activeThemeKey].vars); }
+
 function selectTheme(key) {
   if (!themes[key]) return;
   activeThemeKey = key;
@@ -827,12 +833,12 @@ function selectDifficulty(diff) {
 function initDifficultyUI() {
   const select = document.getElementById('difficultySelect');
   if (select) select.value = currentDifficulty;
-  updateActiveModelNote('best_model.pth');
+  updateActiveModelNote('best_model.onnx');
 }
 
 function updateActiveModelNote(text) {
   const el = document.getElementById('activeModelNote');
-  if (el) el.textContent = text || 'best_model.pth';
+  if (el) el.textContent = text || 'best_model.onnx';
 }
 
 function initThemeGrid() {
@@ -844,6 +850,7 @@ function initThemeGrid() {
     card.className = 'theme-card' + (key === activeThemeKey ? ' selected' : '');
     card.setAttribute('data-key', key);
     card.setAttribute('aria-pressed', key === activeThemeKey ? 'true' : 'false');
+
     const v = theme.vars;
     card.innerHTML = `
       <span class="theme-swatch-row">
@@ -908,13 +915,11 @@ function stampMarkup(status, macroIdx) {
       <text x="50" y="59" text-anchor="middle" font-size="34">–</text>
     </svg>`;
   }
-  
   const p1Symbol = humanInternal === 1 ? humanSymbol : aiSymbol;
   const isX = (status === 1 && p1Symbol === 'X') || (status === -1 && p1Symbol === 'O');
-  
   const letter = isX ? 'X' : 'O';
   const winClass = isX ? 'stamp-win-x' : 'stamp-win-o';
-  
+
   return `<svg class="stamp ${winClass}" viewBox="0 0 100 100" style="transform:rotate(${rot}deg)">
     <circle class="stamp-ring" cx="50" cy="50" r="40" filter="url(#chalk-rough)"/>
     <text x="50" y="61" text-anchor="middle" font-size="38">${letter}</text>
@@ -955,16 +960,17 @@ function createBoard() {
 }
 
 function startGame(selectedSymbol) {
+  if (!engineReady) return;
   humanSymbol = selectedSymbol;
   aiSymbol = selectedSymbol === 'X' ? 'O' : 'X';
-  
+
   resetGameState();
-  
+
   humanInternal = Math.random() < 0.5 ? 1 : -1;
   aiInternal = -humanInternal;
   currentTurn = 1;
-  
   gameActive = true;
+
   document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
   updateRoster();
   SoundFX.click();
@@ -982,7 +988,7 @@ function resetGame() {
   resetGameState();
   updateBoardUI();
   updateEvalBar(0);
-  enableControls();
+  if (engineReady) enableControls();
   document.getElementById('rosterRow').style.display = 'none';
   SoundFX.click();
 }
@@ -1019,8 +1025,8 @@ function updateBoardUI() {
   for (let m = 0; m < 9; m++) {
     const macroElem = document.getElementById(`macro-${m}`);
     const overlay = document.getElementById(`macro-overlay-${m}`);
-
     let isMacroActive = false;
+
     if (gameActive && macroStatus[m] === 0) {
       if (activeGrid === -1 || activeGrid === m) isMacroActive = true;
     }
@@ -1031,6 +1037,11 @@ function updateBoardUI() {
     } else if (gameActive && !isMacroActive && macroStatus[m] === 0) {
       macroClass += ' macro-inactive';
     }
+    
+    if (macroStatus[m] !== 0) {
+      macroClass += ' decided';
+    }
+    
     macroElem.className = macroClass;
 
     if (macroStatus[m] !== 0) {
@@ -1074,50 +1085,99 @@ function updateBoardUI() {
 async function handleHumanMove(macro, micro) {
   if (!gameActive || currentTurn !== humanInternal) return;
   const idx = macro * 9 + micro;
-
   if (board[idx] !== 0 || macroStatus[macro] !== 0) return;
   if (activeGrid !== -1 && activeGrid !== macro) return;
 
   makeMove(idx, humanInternal);
-
   if (checkGameOver()) return;
 
   currentTurn = aiInternal;
-  updateStatus('Engine is thinking…', 'pending');
+  updateStatus('Engine is thinking...', 'pending');
   updateBoardUI();
-  await triggerAIMove();
+
+  // Short delay to allow UI to render before blocking WASM thread
+  setTimeout(triggerAIMove, 50);
 }
 
+// --------------------------------------------------------
+// WASM Orchestration Loop
+// --------------------------------------------------------
 async function triggerAIMove() {
-  try {
-    const res = await fetch('/move', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ board: board, active_grid: activeGrid, simulations: getSimulations() })
-    });
+  if (!engineReady) return;
 
-    const data = await res.json();
+  try {
+    const state = wasmModule.create_state(board, activeGrid);
+    const tree = new wasmModule.MCTSTree(state, false);
+
+    let sims = getSimulations();
+    let loopCounter = 0;
     
-    if (typeof data.move === 'number' && data.move >= 0 && data.move <= 80) {
-      makeMove(data.move, aiInternal);
-      if (data.value !== undefined) {
-        const xValue = data.value * (aiSymbol === 'X' ? 1 : -1);
-        updateEvalBar(xValue);
+    // UI FIX: Increased batch size significantly speeds up the WASM bridge bottleneck
+    const BATCH_SIZE = 64; 
+
+    while (!tree.is_done(sims)) {
+      const leavesView = wasmModule.request_leaves(tree, BATCH_SIZE);
+      const numLeaves = wasmModule.get_leaves_count();
+
+      if (numLeaves > 0) {
+        const tensorData = new Float32Array(leavesView);
+        const tensor = new ort.Tensor('float32', tensorData, [numLeaves, 6, 9, 9]);
+
+        const results = await ortSession.run({ 'input': tensor });
+        const policies = results['policy_logits'].data;
+        const values = results['value'].data;
+
+        wasmModule.submit_results(tree, policies, values, numLeaves);
       }
-    } else {
-      console.error('Engine returned invalid move:', data);
-      updateStatus('Engine error — invalid move.', 'bad');
-      return; 
+      
+      // UI FIX: Yield execution back to the browser periodically so animations don't freeze
+      if (++loopCounter % 2 === 0) {
+          await new Promise(r => setTimeout(r, 0));
+      }
     }
+
+    const policyView = wasmModule.get_root_policy(tree, 0.0);
+    const policyArray = new Float32Array(policyView);
+    
+    let ai_move = -1;
+    let maxP = -Infinity;
+    for (let i = 0; i < 81; i++) {
+      if (policyArray[i] > maxP) {
+        maxP = policyArray[i];
+        ai_move = i;
+      }
+    }
+
+    const rootStateView = wasmModule.encode_state(state);
+    const rootTensorData = new Float32Array(rootStateView);
+    const rootTensor = new ort.Tensor('float32', rootTensorData, [1, 6, 9, 9]);
+    const rootResults = await ortSession.run({ 'input': rootTensor });
+    const rootVal = rootResults['value'].data[0];
+
+    tree.delete();
+    state.delete();
+
+    if (ai_move === -1) return;
+
+    const xValue = rootVal * (aiSymbol === 'X' ? 1 : -1);
+    updateEvalBar(xValue);
+    makeMove(ai_move, aiInternal);
+
+    const ai_macro = Math.floor(ai_move / 9);
+    const ai_micro = ai_move % 9;
+    console.log(`AI plays: Macro ${ai_macro + 1}, Micro Cell ${ai_micro + 1}`);
 
     if (!checkGameOver()) {
       currentTurn = humanInternal;
       updateStatus('Your move.', 'active');
       updateBoardUI();
     }
+
   } catch (err) {
-    console.error('AI move request failed', err);
-    updateStatus('Lost connection to the engine.', 'bad');
+    console.error('AI inference failed', err);
+    document.getElementById('statusMessage').style.fontSize = "0.75rem";
+    document.getElementById('statusMessage').style.lineHeight = "1.1";
+    updateStatus('Error: ' + (err.message || err), 'bad');
   }
 }
 
@@ -1131,14 +1191,14 @@ function makeMove(idx, player) {
 
   const macro = Math.floor(idx / 9);
   const micro = idx % 9;
-
   const wasDecided = macroStatus[macro] !== 0;
+
   const microGrid = board.slice(macro * 9, macro * 9 + 9);
   macroStatus[macro] = checkSubGridWin(microGrid);
+
   if (!wasDecided && macroStatus[macro] !== 0) SoundFX.microWin();
 
   freeMoveRule = false;
-  
   if (macroStatus[micro] !== 0) {
     activeGrid = -1;
     freeMoveRule = true;
@@ -1195,8 +1255,8 @@ function updateStatus(msg, kind = 'default') {
 
 function updateEvalBar(val) {
   const valElem = document.getElementById('evalValue');
-  
   valElem.textContent = val > 0 ? `+${val.toFixed(2)}` : val.toFixed(2);
+  
   if (val > 0.05) valElem.style.color = 'var(--chalk-pink)';
   else if (val < -0.05) valElem.style.color = 'var(--chalk-blue)';
   else valElem.style.color = 'var(--chalk)';
@@ -1206,6 +1266,47 @@ function updateEvalBar(val) {
   document.getElementById('evalBarO').style.width = `${100 - xPercent}%`;
 }
 
+// --------------------------------------------------------
+// Initialize Engine
+// --------------------------------------------------------
+async function initEngine() {
+  try {
+    updateStatus("Loading C++ Engine (WASM)...", "pending");
+    // UI FIX: Yield execution to allow the DOM to render the status update before blocking
+    await new Promise(r => setTimeout(r, 10));
+
+    wasmModule = await createZeroCrossModule();
+
+    updateStatus("Loading Neural Network...", "pending");
+    await new Promise(r => setTimeout(r, 10));
+
+    // UI FIX: Speed Optimization. Enable multi-threading and SIMD vector instructions for ONNX Runtime Web.
+    ort.env.wasm.numThreads = Math.max(1, navigator.hardwareConcurrency - 1);
+    ort.env.wasm.simd = true;
+    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+
+    const sessionOptions = {
+      executionProviders: ['wasm'],
+      externalData: [
+        {
+          path: 'best_model.onnx.data',
+          data: 'best_model.onnx.data'
+        }
+      ]
+    };
+
+    ortSession = await ort.InferenceSession.create('best_model.onnx', sessionOptions);
+
+    engineReady = true;
+    enableControls();
+  } catch (e) {
+    console.error("Engine Load Error:", e);
+    document.getElementById('statusMessage').style.fontSize = "0.75rem";
+    document.getElementById('statusMessage').style.lineHeight = "1.1";
+    updateStatus("Error: " + (e.message || e), "bad");
+  }
+}
+
 window.onload = () => {
   applyThemeVariables(themes[activeThemeKey].vars);
   initThemeGrid();
@@ -1213,7 +1314,8 @@ window.onload = () => {
   initDifficultyUI();
   createBoard();
   updateMoveCount();
-  enableControls();
+  
+  initEngine();
 };
 </script>
 </body>
