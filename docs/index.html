@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#1e332a">
 <title>ZeroCross | Ultimate Tic-Tac-Toe Engine</title>
+
+<!-- Service Worker to unlock WebAssembly Multi-threading on GitHub Pages -->
+<script src="coi-serviceworker.js"></script>
+
 <meta name="description" content="Play Ultimate Tic-Tac-Toe against ZeroCross, a self-taught AlphaZero-style engine.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%231e332a'/%3E%3Cg stroke='%23eef0e2' stroke-width='6' stroke-linecap='round'%3E%3Cline x1='34' y1='10' x2='34' y2='90'/%3E%3Cline x1='66' y1='10' x2='66' y2='90'/%3E%3Cline x1='10' y1='34' x2='90' y2='34'/%3E%3Cline x1='10' y1='66' x2='90' y2='66'/%3E%3C/g%3E%3Cg stroke='%23f0a8a0' stroke-width='7' stroke-linecap='round'%3E%3Cline x1='44' y1='44' x2='56' y2='56'/%3E%3Cline x1='56' y1='44' x2='44' y2='56'/%3E%3C/g%3E%3Ccircle cx='22' cy='22' r='7' fill='none' stroke='%239fd3e8' stroke-width='6'/%3E%3C/svg%3E">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -155,23 +159,9 @@ body {
 .micro-cell:disabled { cursor: default; }
 .micro-cell:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
 
+/* UI FIX: Remove buggy pseudo-elements and use a clean, solid background glow */
 .micro-cell.cell-last {
-  background: transparent;
-}
-.micro-cell.cell-last::before {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 5px;
-  border: 2px solid var(--chalk-yellow);
-  animation: last-move-in 0.25s ease-out;
-  pointer-events: none;
-}
-.micro-cell.cell-last-x::before { border-color: var(--chalk-pink); }
-.micro-cell.cell-last-o::before { border-color: var(--chalk-blue); }
-@keyframes last-move-in {
-  from { opacity: 0; transform: scale(0.82); }
-  to   { opacity: 1; transform: scale(1); }
+  background: rgba(232, 209, 122, 0.22);
 }
 
 .mark { width: 66%; height: 66%; overflow: visible; }
@@ -1090,9 +1080,7 @@ function updateBoardUI() {
 
       let cellClass = 'micro-cell';
       if (idx === lastMoveIdx) {
-        const p1Symbol = humanInternal === 1 ? humanSymbol : aiSymbol;
-        const isX = (val === 1 && p1Symbol === 'X') || (val === -1 && p1Symbol === 'O');
-        cellClass += ' cell-last ' + (isX ? 'cell-last-x' : 'cell-last-o');
+        cellClass += ' cell-last';
       }
 
       if (val !== 0) {
@@ -1126,9 +1114,8 @@ async function handleHumanMove(macro, micro) {
   updateStatus('Engine is thinking...', 'pending');
   updateBoardUI();
 
-  // Allow enough time for the 350ms CSS chalk drawing animation to finish
-  // before the WASM engine blocks the main browser thread.
-  setTimeout(triggerAIMove, 400);
+  // FIX: Increased delay to 450ms so the CSS animation always finishes completely before AI math starts
+  setTimeout(triggerAIMove, 450);
 }
 
 // --------------------------------------------------------
@@ -1158,6 +1145,7 @@ async function triggerWasmAIMove() {
   let sims = getSimulations();
   let loopCounter = 0;
 
+  // FIX: Restored batch size to 64 as requested for performance
   const BATCH_SIZE = 64;
 
   while (!tree.is_done(sims)) {
@@ -1175,9 +1163,8 @@ async function triggerWasmAIMove() {
       wasmModule.submit_results(tree, policies, values, numLeaves);
     }
 
-    if (++loopCounter % 2 === 0) {
-        await new Promise(r => setTimeout(r, 0));
-    }
+    // FIX: Yield execution to the browser on EVERY loop to prevent complete screen freezing
+    await new Promise(r => setTimeout(r, 0));
   }
 
   const policyView = wasmModule.get_root_policy(tree, 0.0);
