@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: zerocross-ai-web
+    env: static
+    buildCommand: "" 
+    staticPublishPath: ./docs
+    headers:
+      - path: /*
+        name: Cross-Origin-Embedder-Policy
+        value: require-corp
+      - path: /*
+        name: Cross-Origin-Opener-Policy
+        value: same-origin
