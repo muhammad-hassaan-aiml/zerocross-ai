@@ -1,6 +1,7 @@
 import os
 import sys
 import torch
+import onnx
 
 sys.path.extend(['.', 'build', '../build', os.path.join(os.getcwd(), 'build')])
 from network import ZeroCrossNet
@@ -43,6 +44,13 @@ def export_to_onnx():
             'value': {0: 'batch_size'}
         }
     )
+    data_path = onnx_path + '.data'
+    if os.path.exists(data_path):
+        print("Consolidating external data into a single .onnx file...")
+        model = onnx.load(onnx_path, load_external_data=True)
+        onnx.save_model(model, onnx_path, save_as_external_data=False)
+        os.remove(data_path)
+
     print("Export complete!")
 
 if __name__ == "__main__":

@@ -66,7 +66,8 @@ body {
   min-height: 0;
 }
 @media (min-width: 1024px) {
-  .content { flex-direction: row; align-items: center; gap: 3rem; padding: 2rem 3rem; }
+  .content { flex-direction: row; align-items: stretch; gap: 3rem; padding: 2rem 3rem; }
+  .content > aside { align-self: center; }
 }
 
 .tray-panel {
@@ -78,12 +79,25 @@ body {
   transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
+.board-stage {
+  min-width: 0;
+  min-height: 0;
+}
+@media (min-width: 1024px) {
+  .board-stage { container-type: size; }
+}
+
 .board-frame {
   background: linear-gradient(150deg, var(--wood), var(--wood-dark));
   border-radius: 16px;
   padding: 14px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   transition: background 0.3s ease;
+  width: min(100%, 78vh);
+  aspect-ratio: 1 / 1;
+}
+@media (min-width: 1024px) {
+  .board-frame { width: min(92cqw, 92cqh); }
 }
 
 .board-grid {
@@ -117,7 +131,6 @@ body {
 }
 .macro-inactive { opacity: 0.55; }
 
-/* UI FIX: Fade out micro cells when a macro grid is already won */
 .macro-grid.decided .micro-cell {
   opacity: 0.15;
   pointer-events: none;
@@ -142,9 +155,23 @@ body {
 .micro-cell:disabled { cursor: default; }
 .micro-cell:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
 
-/* UI FIX: Clean background glow instead of broken ::after elements */
 .micro-cell.cell-last {
-  background: rgba(232, 209, 122, 0.2);
+  background: transparent;
+}
+.micro-cell.cell-last::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 5px;
+  border: 2px solid var(--chalk-yellow);
+  animation: last-move-in 0.25s ease-out;
+  pointer-events: none;
+}
+.micro-cell.cell-last-x::before { border-color: var(--chalk-pink); }
+.micro-cell.cell-last-o::before { border-color: var(--chalk-blue); }
+@keyframes last-move-in {
+  from { opacity: 0; transform: scale(0.82); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 .mark { width: 66%; height: 66%; overflow: visible; }
@@ -310,7 +337,6 @@ body {
 }
 .toggle-switch.on .toggle-knob { transform: translateX(17px); }
 
-/* UI FIX: Removed transform from standard transition to stop text blurring */
 .icon-btn {
   display: flex;
   align-items: center;
@@ -529,8 +555,8 @@ body {
       <button onclick="resetGame()" class="chalk-btn btn-primary w-full py-3.5 text-base">New Game</button>
     </aside>
 
-    <section class="flex-1 flex items-center justify-center w-full min-h-0">
-      <div class="board-frame w-full max-w-[78vh] aspect-square">
+    <section class="board-stage flex-1 flex items-center justify-center w-full min-h-0">
+      <div class="board-frame">
         <div id="board" class="board-grid w-full h-full"></div>
       </div>
     </section>
@@ -589,6 +615,7 @@ let freeMoveRule = false;
 let wasmModule = null;
 let ortSession = null;
 let engineReady = false;
+let engineMode = 'wasm'; 
 
 const difficultySimulations = {
   easy: 50,
@@ -1062,7 +1089,11 @@ function updateBoardUI() {
       const val = board[idx];
 
       let cellClass = 'micro-cell';
-      if (idx === lastMoveIdx) cellClass += ' cell-last';
+      if (idx === lastMoveIdx) {
+        const p1Symbol = humanInternal === 1 ? humanSymbol : aiSymbol;
+        const isX = (val === 1 && p1Symbol === 'X') || (val === -1 && p1Symbol === 'O');
+        cellClass += ' cell-last ' + (isX ? 'cell-last-x' : 'cell-last-o');
+      }
 
       if (val !== 0) {
         if (!cellElem.dataset.rendered) {
@@ -1095,8 +1126,9 @@ async function handleHumanMove(macro, micro) {
   updateStatus('Engine is thinking...', 'pending');
   updateBoardUI();
 
-  // Short delay to allow UI to render before blocking WASM thread
-  setTimeout(triggerAIMove, 50);
+  // Allow enough time for the 350ms CSS chalk drawing animation to finish
+  // before the WASM engine blocks the main browser thread.
+  setTimeout(triggerAIMove, 400);
 }
 
 // --------------------------------------------------------
@@ -1106,79 +1138,194 @@ async function triggerAIMove() {
   if (!engineReady) return;
 
   try {
-    const state = wasmModule.create_state(board, activeGrid);
-    const tree = new wasmModule.MCTSTree(state, false);
-
-    let sims = getSimulations();
-    let loopCounter = 0;
-    
-    // UI FIX: Increased batch size significantly speeds up the WASM bridge bottleneck
-    const BATCH_SIZE = 64; 
-
-    while (!tree.is_done(sims)) {
-      const leavesView = wasmModule.request_leaves(tree, BATCH_SIZE);
-      const numLeaves = wasmModule.get_leaves_count();
-
-      if (numLeaves > 0) {
-        const tensorData = new Float32Array(leavesView);
-        const tensor = new ort.Tensor('float32', tensorData, [numLeaves, 6, 9, 9]);
-
-        const results = await ortSession.run({ 'input': tensor });
-        const policies = results['policy_logits'].data;
-        const values = results['value'].data;
-
-        wasmModule.submit_results(tree, policies, values, numLeaves);
-      }
-      
-      // UI FIX: Yield execution back to the browser periodically so animations don't freeze
-      if (++loopCounter % 2 === 0) {
-          await new Promise(r => setTimeout(r, 0));
-      }
+    if (engineMode === 'wasm') {
+      await triggerWasmAIMove();
+    } else {
+      await triggerFallbackAIMove();
     }
-
-    const policyView = wasmModule.get_root_policy(tree, 0.0);
-    const policyArray = new Float32Array(policyView);
-    
-    let ai_move = -1;
-    let maxP = -Infinity;
-    for (let i = 0; i < 81; i++) {
-      if (policyArray[i] > maxP) {
-        maxP = policyArray[i];
-        ai_move = i;
-      }
-    }
-
-    const rootStateView = wasmModule.encode_state(state);
-    const rootTensorData = new Float32Array(rootStateView);
-    const rootTensor = new ort.Tensor('float32', rootTensorData, [1, 6, 9, 9]);
-    const rootResults = await ortSession.run({ 'input': rootTensor });
-    const rootVal = rootResults['value'].data[0];
-
-    tree.delete();
-    state.delete();
-
-    if (ai_move === -1) return;
-
-    const xValue = rootVal * (aiSymbol === 'X' ? 1 : -1);
-    updateEvalBar(xValue);
-    makeMove(ai_move, aiInternal);
-
-    const ai_macro = Math.floor(ai_move / 9);
-    const ai_micro = ai_move % 9;
-    console.log(`AI plays: Macro ${ai_macro + 1}, Micro Cell ${ai_micro + 1}`);
-
-    if (!checkGameOver()) {
-      currentTurn = humanInternal;
-      updateStatus('Your move.', 'active');
-      updateBoardUI();
-    }
-
   } catch (err) {
     console.error('AI inference failed', err);
     document.getElementById('statusMessage').style.fontSize = "0.75rem";
     document.getElementById('statusMessage').style.lineHeight = "1.1";
     updateStatus('Error: ' + (err.message || err), 'bad');
   }
+}
+
+async function triggerWasmAIMove() {
+  const state = wasmModule.create_state(board, activeGrid);
+  const tree = new wasmModule.MCTSTree(state, false);
+
+  let sims = getSimulations();
+  let loopCounter = 0;
+
+  const BATCH_SIZE = 64;
+
+  while (!tree.is_done(sims)) {
+    const leavesView = wasmModule.request_leaves(tree, BATCH_SIZE);
+    const numLeaves = wasmModule.get_leaves_count();
+
+    if (numLeaves > 0) {
+      const tensorData = new Float32Array(leavesView);
+      const tensor = new ort.Tensor('float32', tensorData, [numLeaves, 6, 9, 9]);
+
+      const results = await ortSession.run({ 'input': tensor });
+      const policies = results['policy_logits'].data;
+      const values = results['value'].data;
+
+      wasmModule.submit_results(tree, policies, values, numLeaves);
+    }
+
+    if (++loopCounter % 2 === 0) {
+        await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  const policyView = wasmModule.get_root_policy(tree, 0.0);
+  const policyArray = new Float32Array(policyView);
+
+  let ai_move = -1;
+  let maxP = -Infinity;
+  for (let i = 0; i < 81; i++) {
+    if (policyArray[i] > maxP) {
+      maxP = policyArray[i];
+      ai_move = i;
+    }
+  }
+
+  const rootStateView = wasmModule.encode_state(state);
+  const rootTensorData = new Float32Array(rootStateView);
+  const rootTensor = new ort.Tensor('float32', rootTensorData, [1, 6, 9, 9]);
+  const rootResults = await ortSession.run({ 'input': rootTensor });
+  const rootVal = rootResults['value'].data[0];
+
+  tree.delete();
+  state.delete();
+
+  if (ai_move === -1) return;
+
+  const xValue = rootVal * (aiSymbol === 'X' ? 1 : -1);
+  updateEvalBar(xValue);
+  makeMove(ai_move, aiInternal);
+
+  const ai_macro = Math.floor(ai_move / 9);
+  const ai_micro = ai_move % 9;
+  console.log(`AI plays: Macro ${ai_macro + 1}, Micro Cell ${ai_micro + 1}`);
+
+  if (!checkGameOver()) {
+    currentTurn = humanInternal;
+    updateStatus('Your move.', 'active');
+    updateBoardUI();
+  }
+}
+
+// --------------------------------------------------------
+// Fallback engine — pure JS, no WASM/ONNX required. Used automatically
+// whenever zerocross.js / best_model.onnx aren't available.
+// --------------------------------------------------------
+async function triggerFallbackAIMove() {
+  const thinkMs = { easy: 250, medium: 450, hard: 700 }[currentDifficulty] || 400;
+  await new Promise(r => setTimeout(r, thinkMs));
+
+  const move = pickFallbackMove(aiInternal);
+  if (move === -1) return;
+
+  updateEvalBar(estimateHeuristicEval());
+  makeMove(move, aiInternal);
+
+  const ai_macro = Math.floor(move / 9);
+  const ai_micro = move % 9;
+  console.log(`AI (fallback) plays: Macro ${ai_macro + 1}, Micro Cell ${ai_micro + 1}`);
+
+  if (!checkGameOver()) {
+    currentTurn = humanInternal;
+    updateStatus('Your move.', 'active');
+    updateBoardUI();
+  }
+}
+
+function legalMoves(forActiveGrid) {
+  const moves = [];
+  const macros = (forActiveGrid !== -1 && macroStatus[forActiveGrid] === 0)
+    ? [forActiveGrid]
+    : Array.from({ length: 9 }, (_, i) => i).filter(m => macroStatus[m] === 0);
+  for (const m of macros) {
+    for (let u = 0; u < 9; u++) {
+      const idx = m * 9 + u;
+      if (board[idx] === 0) moves.push(idx);
+    }
+  }
+  return moves;
+}
+
+function simulateWinsMicro(mv, player) {
+  const macro = Math.floor(mv / 9);
+  if (macroStatus[macro] !== 0) return false;
+  const micro = board.slice(macro * 9, macro * 9 + 9);
+  micro[mv % 9] = player;
+  return checkSubGridWin(micro) === player;
+}
+
+function simulateWinsGame(mv, player) {
+  if (!simulateWinsMicro(mv, player)) return false;
+  const macro = Math.floor(mv / 9);
+  const macroCopy = macroStatus.slice();
+  macroCopy[macro] = player;
+  return checkSubGridWin(macroCopy) === player;
+}
+
+function pickBest(moves) {
+  const cellScore = [3, 2, 3, 2, 4, 2, 3, 2, 3]; // center best, corners next, edges least
+  let best = [];
+  let bestScore = -Infinity;
+  for (const mv of moves) {
+    const micro = mv % 9;
+    const destMacro = micro; // the macro board this move sends the opponent to
+    let score = cellScore[micro];
+    if (macroStatus[destMacro] !== 0) score += 1; // sends opponent to an already-decided board (free choice)
+    else if (destMacro === 4) score -= 1; // avoid gifting opponent the center board
+    score += Math.random() * 0.5; // tie-break randomness
+    if (score > bestScore) { bestScore = score; best = [mv]; }
+    else if (score === bestScore) { best.push(mv); }
+  }
+  return best[Math.floor(Math.random() * best.length)];
+}
+
+function pickFallbackMove(player) {
+  const opponent = -player;
+  const moves = legalMoves(activeGrid);
+  if (moves.length === 0) return -1;
+
+  const outrightWins = moves.filter(mv => simulateWinsGame(mv, player));
+  if (outrightWins.length) return pickBest(outrightWins);
+
+  const mustBlock = moves.filter(mv => simulateWinsGame(mv, opponent));
+  if (mustBlock.length) return pickBest(mustBlock);
+
+  const localWins = moves.filter(mv => simulateWinsMicro(mv, player));
+  if (localWins.length) return pickBest(localWins);
+
+  const localBlocks = moves.filter(mv => simulateWinsMicro(mv, opponent));
+  if (localBlocks.length) return pickBest(localBlocks);
+
+  return pickBest(moves);
+}
+
+function internalToXSign(internalVal) {
+  const symbolForInternal1 = humanInternal === 1 ? humanSymbol : aiSymbol;
+  const isXFor1 = symbolForInternal1 === 'X';
+  if (internalVal === 1) return isXFor1 ? 1 : -1;
+  if (internalVal === -1) return isXFor1 ? -1 : 1;
+  return 0;
+}
+
+function estimateHeuristicEval() {
+  let score = 0;
+  for (let i = 0; i < 9; i++) {
+    if (macroStatus[i] !== 0 && macroStatus[i] !== 2) {
+      score += internalToXSign(macroStatus[i]);
+    }
+  }
+  return Math.max(-1, Math.min(1, score / 3));
 }
 
 function makeMove(idx, player) {
@@ -1272,38 +1419,41 @@ function updateEvalBar(val) {
 async function initEngine() {
   try {
     updateStatus("Loading C++ Engine (WASM)...", "pending");
-    // UI FIX: Yield execution to allow the DOM to render the status update before blocking
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise(r => setTimeout(r, 100));
+
+    if (typeof createZeroCrossModule !== 'function') {
+      throw new Error('engine-script-missing');
+    }
 
     wasmModule = await createZeroCrossModule();
 
     updateStatus("Loading Neural Network...", "pending");
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise(r => setTimeout(r, 100));
 
-    // UI FIX: Speed Optimization. Enable multi-threading and SIMD vector instructions for ONNX Runtime Web.
-    ort.env.wasm.numThreads = Math.max(1, navigator.hardwareConcurrency - 1);
+    if (typeof ort === 'undefined') {
+      throw new Error('onnxruntime-missing');
+    }
+
+    ort.env.wasm.numThreads = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
     ort.env.wasm.simd = true;
     ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
 
     const sessionOptions = {
-      executionProviders: ['wasm'],
-      externalData: [
-        {
-          path: 'best_model.onnx.data',
-          data: 'best_model.onnx.data'
-        }
-      ]
+      executionProviders: ['wasm']
     };
 
     ortSession = await ort.InferenceSession.create('best_model.onnx', sessionOptions);
 
+    engineMode = 'wasm';
     engineReady = true;
+    updateActiveModelNote('best_model.onnx (full strength)');
     enableControls();
   } catch (e) {
-    console.error("Engine Load Error:", e);
-    document.getElementById('statusMessage').style.fontSize = "0.75rem";
-    document.getElementById('statusMessage').style.lineHeight = "1.1";
-    updateStatus("Error: " + (e.message || e), "bad");
+    console.warn('Full engine unavailable, using local fallback AI instead:', e);
+    engineMode = 'fallback';
+    engineReady = true;
+    updateActiveModelNote('local heuristic (fallback — engine files not found)');
+    enableControls();
   }
 }
 
