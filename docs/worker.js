@@ -42,7 +42,15 @@ self.onmessage = async function(e) {
             const state = wasmModule.create_state(board, activeGrid);
             const tree = new wasmModule.MCTSTree(state, false);
 
-            const BATCH_SIZE = 64;
+            // Determine the optimal batch size based on the difficulty.
+            // This prevents MCTS "tunnel vision" by ensuring the tree updates
+            // frequently enough, while still utilizing CPU SIMD speed optimizations.
+            let BATCH_SIZE = 8;
+            if (simulations >= 800) {
+                BATCH_SIZE = 32;
+            } else if (simulations >= 200) {
+                BATCH_SIZE = 16;
+            }
 
             while (!tree.is_done(simulations)) {
                 const leavesView = wasmModule.request_leaves(tree, BATCH_SIZE);
