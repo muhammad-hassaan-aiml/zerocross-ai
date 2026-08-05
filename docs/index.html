@@ -12,8 +12,7 @@
 <meta name="description" content="Play Ultimate Tic-Tac-Toe against ZeroCross, a self-taught AlphaZero-style engine.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%231e332a'/%3E%3Cg stroke='%23eef0e2' stroke-width='6' stroke-linecap='round'%3E%3Cline x1='34' y1='10' x2='34' y2='90'/%3E%3Cline x1='66' y1='10' x2='66' y2='90'/%3E%3Cline x1='10' y1='34' x2='90' y2='34'/%3E%3Cline x1='10' y1='66' x2='90' y2='66'/%3E%3C/g%3E%3Cg stroke='%23f0a8a0' stroke-width='7' stroke-linecap='round'%3E%3Cline x1='44' y1='44' x2='56' y2='56'/%3E%3Cline x1='56' y1='44' x2='44' y2='56'/%3E%3C/g%3E%3Ccircle cx='22' cy='22' r='7' fill='none' stroke='%239fd3e8' stroke-width='6'/%3E%3C/svg%3E">
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-<script src="zerocross.js"></script>
+
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
@@ -153,15 +152,20 @@ body {
   align-items: center;
   justify-content: center;
   position: relative;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, border 0.15s ease, border-radius 0.15s ease;
 }
 .micro-cell:hover:not(:disabled) { background: rgba(238, 240, 226, 0.06); cursor: crosshair; }
 .micro-cell:disabled { cursor: default; }
 .micro-cell:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
 
-/* UI FIX: Remove buggy pseudo-elements and use a clean, solid background glow */
-.micro-cell.cell-last {
-  background: rgba(232, 209, 122, 0.22);
+/* NEW: Dynamic player-colored borders for the last move */
+.micro-cell.cell-last-x {
+  border: 2px solid var(--chalk-pink);
+  border-radius: 6px;
+}
+.micro-cell.cell-last-o {
+  border: 2px solid var(--chalk-blue);
+  border-radius: 6px;
 }
 
 .mark { width: 66%; height: 66%; overflow: visible; }
@@ -602,8 +606,10 @@ let lastMoveIdx = -1;
 let moveCount = 0;
 let freeMoveRule = false;
 
-let wasmModule = null;
-let ortSession = null;
+// Increment the game ID to explicitly orphan and ignore any currently running worker threads
+let currentGameId = 0; 
+
+let engineWorker = null;
 let engineReady = false;
 let engineMode = 'wasm'; 
 
@@ -1011,6 +1017,9 @@ function resetGame() {
 }
 
 function resetGameState() {
+  // Increment the game ID to explicitly orphan and ignore any currently running worker threads
+  currentGameId++;
+  
   board.fill(0);
   macroStatus.fill(0);
   activeGrid = -1;
@@ -1079,8 +1088,12 @@ function updateBoardUI() {
       const val = board[idx];
 
       let cellClass = 'micro-cell';
+      
+      // NEW: Check the player symbol of the last move to append the correct colored border class
       if (idx === lastMoveIdx) {
-        cellClass += ' cell-last';
+        const p1Symbol = humanInternal === 1 ? humanSymbol : aiSymbol;
+        const isX = (val === 1 && p1Symbol === 'X') || (val === -1 && p1Symbol === 'O');
+        cellClass += isX ? ' cell-last-x' : ' cell-last-o';
       }
 
       if (val !== 0) {
@@ -1114,80 +1127,36 @@ async function handleHumanMove(macro, micro) {
   updateStatus('Engine is thinking...', 'pending');
   updateBoardUI();
 
-  // FIX: Increased delay to 450ms so the CSS animation always finishes completely before AI math starts
   setTimeout(triggerAIMove, 450);
 }
 
 // --------------------------------------------------------
-// WASM Orchestration Loop
+// WASM Orchestration Loop (NOW HANDLED BY WORKER)
 // --------------------------------------------------------
 async function triggerAIMove() {
   if (!engineReady) return;
 
   try {
     if (engineMode === 'wasm') {
-      await triggerWasmAIMove();
+      engineWorker.postMessage({
+        type: 'think',
+        gameId: currentGameId, 
+        board: board,
+        activeGrid: activeGrid,
+        simulations: getSimulations()
+      });
     } else {
       await triggerFallbackAIMove();
     }
   } catch (err) {
-    console.error('AI inference failed', err);
-    document.getElementById('statusMessage').style.fontSize = "0.75rem";
-    document.getElementById('statusMessage').style.lineHeight = "1.1";
-    updateStatus('Error: ' + (err.message || err), 'bad');
+    handleEngineError(err);
   }
 }
 
-async function triggerWasmAIMove() {
-  const state = wasmModule.create_state(board, activeGrid);
-  const tree = new wasmModule.MCTSTree(state, false);
-
-  let sims = getSimulations();
-  let loopCounter = 0;
-
-  // FIX: Restored batch size to 64 as requested for performance
-  const BATCH_SIZE = 64;
-
-  while (!tree.is_done(sims)) {
-    const leavesView = wasmModule.request_leaves(tree, BATCH_SIZE);
-    const numLeaves = wasmModule.get_leaves_count();
-
-    if (numLeaves > 0) {
-      const tensorData = new Float32Array(leavesView);
-      const tensor = new ort.Tensor('float32', tensorData, [numLeaves, 6, 9, 9]);
-
-      const results = await ortSession.run({ 'input': tensor });
-      const policies = results['policy_logits'].data;
-      const values = results['value'].data;
-
-      wasmModule.submit_results(tree, policies, values, numLeaves);
-    }
-
-    // FIX: Yield execution to the browser on EVERY loop to prevent complete screen freezing
-    await new Promise(r => setTimeout(r, 0));
-  }
-
-  const policyView = wasmModule.get_root_policy(tree, 0.0);
-  const policyArray = new Float32Array(policyView);
-
-  let ai_move = -1;
-  let maxP = -Infinity;
-  for (let i = 0; i < 81; i++) {
-    if (policyArray[i] > maxP) {
-      maxP = policyArray[i];
-      ai_move = i;
-    }
-  }
-
-  const rootStateView = wasmModule.encode_state(state);
-  const rootTensorData = new Float32Array(rootStateView);
-  const rootTensor = new ort.Tensor('float32', rootTensorData, [1, 6, 9, 9]);
-  const rootResults = await ortSession.run({ 'input': rootTensor });
-  const rootVal = rootResults['value'].data[0];
-
-  tree.delete();
-  state.delete();
-
+function handleWorkerMove(ai_move, rootVal, incomingGameId) {
+  if (incomingGameId !== currentGameId) return; 
+  if (!gameActive || currentTurn !== aiInternal) return;
+  
   if (ai_move === -1) return;
 
   const xValue = rootVal * (aiSymbol === 'X' ? 1 : -1);
@@ -1205,13 +1174,21 @@ async function triggerWasmAIMove() {
   }
 }
 
+function handleEngineError(err) {
+  console.error('AI inference failed', err);
+  document.getElementById('statusMessage').style.fontSize = "0.75rem";
+  document.getElementById('statusMessage').style.lineHeight = "1.1";
+  updateStatus('Error: ' + (err.message || err), 'bad');
+}
+
 // --------------------------------------------------------
-// Fallback engine — pure JS, no WASM/ONNX required. Used automatically
-// whenever zerocross.js / best_model.onnx aren't available.
+// Fallback engine — pure JS, no WASM/ONNX required.
 // --------------------------------------------------------
 async function triggerFallbackAIMove() {
   const thinkMs = { easy: 250, medium: 450, hard: 700 }[currentDifficulty] || 400;
   await new Promise(r => setTimeout(r, thinkMs));
+
+  if (!gameActive || currentTurn !== aiInternal) return;
 
   const move = pickFallbackMove(aiInternal);
   if (move === -1) return;
@@ -1401,47 +1378,45 @@ function updateEvalBar(val) {
 }
 
 // --------------------------------------------------------
-// Initialize Engine
+// Initialize Engine via Worker
 // --------------------------------------------------------
 async function initEngine() {
   try {
-    updateStatus("Loading C++ Engine (WASM)...", "pending");
-    await new Promise(r => setTimeout(r, 100));
+    updateStatus("Initializing Web Worker...", "pending");
+    
+    if (!window.Worker) throw new Error("Web Workers not supported");
 
-    if (typeof createZeroCrossModule !== 'function') {
-      throw new Error('engine-script-missing');
-    }
+    engineWorker = new Worker('worker.js');
 
-    wasmModule = await createZeroCrossModule();
-
-    updateStatus("Loading Neural Network...", "pending");
-    await new Promise(r => setTimeout(r, 100));
-
-    if (typeof ort === 'undefined') {
-      throw new Error('onnxruntime-missing');
-    }
-
-    ort.env.wasm.numThreads = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
-    ort.env.wasm.simd = true;
-    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
-
-    const sessionOptions = {
-      executionProviders: ['wasm']
+    engineWorker.onmessage = (e) => {
+      const data = e.data;
+      if (data.type === 'init_done') {
+        engineMode = 'wasm';
+        engineReady = true;
+        updateActiveModelNote('best_model.onnx (Web Worker)');
+        enableControls();
+      } else if (data.type === 'init_error') {
+        fallbackInit(data.error);
+      } else if (data.type === 'think_done') {
+        handleWorkerMove(data.move, data.rootVal, data.gameId);
+      } else if (data.type === 'think_error') {
+        handleEngineError(data.error);
+      }
     };
 
-    ortSession = await ort.InferenceSession.create('best_model.onnx', sessionOptions);
+    engineWorker.postMessage({ type: 'init' });
 
-    engineMode = 'wasm';
-    engineReady = true;
-    updateActiveModelNote('best_model.onnx (full strength)');
-    enableControls();
   } catch (e) {
-    console.warn('Full engine unavailable, using local fallback AI instead:', e);
-    engineMode = 'fallback';
-    engineReady = true;
-    updateActiveModelNote('local heuristic (fallback — engine files not found)');
-    enableControls();
+    fallbackInit(e);
   }
+}
+
+function fallbackInit(e) {
+  console.warn('Full engine unavailable, using local fallback AI instead:', e);
+  engineMode = 'fallback';
+  engineReady = true;
+  updateActiveModelNote('local heuristic (fallback)');
+  enableControls();
 }
 
 window.onload = () => {
