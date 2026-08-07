@@ -241,6 +241,18 @@ body {
   aspect-ratio: 1 / 1;
 }
 
+/* Applied only for the duration of a mobile sheet toggle (see
+   syncBoardForSheetTransition in the script) so the board's explicit
+   pixel width/height — set once, synchronously, to their final target —
+   can animate smoothly via native CSS instead of JS nudging them every
+   frame. Scoped to a temporary class so ordinary resizes/orientation
+   changes still snap instantly instead of animating unexpectedly. */
+.board-frame.sheet-sync {
+  transition: background 0.3s ease, box-shadow 0.3s ease,
+    width 0.32s cubic-bezier(0.22, 0.8, 0.25, 1),
+    height 0.32s cubic-bezier(0.22, 0.8, 0.25, 1);
+}
+
 .board-grid {
   position: relative;
   background-color: var(--board-bg);
@@ -1136,8 +1148,6 @@ let mobileSheetCollapsed = false;
 // above the bottom sheet, on every screen size and rotation.
 // Fixes the board being hidden/cropped behind the panel.
 // --------------------------------------------------------
-let sheetOffsetRAF = null;
-
 function isSheetLayoutActive() {
   // Mirrors the CSS: bottom-sheet layout applies under 1024px,
   // EXCEPT short landscape phones, which go side-by-side instead.
@@ -1185,19 +1195,6 @@ function updateBoardOffset() {
 // box in JS and setting an explicit pixel width/height removes
 // that ambiguity entirely: the board can never be bigger than the
 // space it's actually been given.
-//
-// Perf note: this is the expensive half of the old updateBoardOffset()
-// — it reads layout (getBoundingClientRect + getComputedStyle) and then
-// writes layout-affecting inline styles on .board-frame, which forces a
-// layout/paint of the entire 81-cell board subtree. Calling this on
-// every single animation frame during the mobile sheet's slide (previously
-// ~24 times over 400ms) was the single biggest source of the "lag on
-// phones" — each call forces the browser to synchronously flush layout
-// right after the previous frame's style write ("layout thrashing").
-// It's now throttled by the caller (trackBoardOffsetDuringTransition)
-// during that specific animation, while still running on every call from
-// non-animated call sites (initial load, ResizeObserver, window resize)
-// where it only fires occasionally anyway.
 // --------------------------------------------------------
 function sizeBoardFrame() {
   const stage = document.querySelector('.board-stage');
@@ -1219,34 +1216,56 @@ function sizeBoardFrame() {
   }
 }
 
-// Runs during the sheet's slide transition so the board resizes smoothly
-// in sync with the panel instead of jumping or lagging behind it.
+// --------------------------------------------------------
+// Sheet-toggle sync.
 //
-// Perf: previously called the expensive updateBoardOffset()+sizeBoardFrame()
-// combo on every single rAF tick (~60fps) for the whole transition. That's
-// ~24 forced full-board layout passes in 400ms — the main cause of visible
-// stutter on mobile when opening/closing the panel, which happens after
-// nearly every move (see setMobileSheetCollapsed calls below). Now: the
-// cheap cover-height sync still runs every frame (keeps the CSS padding
-// transition tracking the sheet precisely), but the expensive board resize
-// is throttled to roughly every 3rd frame (~20fps) — still visually smooth,
-// with a final precise pass once the transition settles.
-function trackBoardOffsetDuringTransition(durationMs = 400) {
-  const start = performance.now();
-  if (sheetOffsetRAF) cancelAnimationFrame(sheetOffsetRAF);
-  let frameCount = 0;
-  function step(now) {
-    frameCount++;
-    updateCoverOnly();
-    if (frameCount % 3 === 0) sizeBoardFrame();
-    if (now - start < durationMs) {
-      sheetOffsetRAF = requestAnimationFrame(step);
-    } else {
-      sizeBoardFrame();
-      sheetOffsetRAF = null;
-    }
+// Perf history: this used to run a requestAnimationFrame loop for the
+// full ~400ms of the sheet's slide, calling getBoundingClientRect() +
+// a style write on (up to) every frame. That read-then-write pattern is
+// classic layout thrashing — each read forces the browser to flush any
+// pending layout synchronously, which fights the sheet's own (otherwise
+// compositor-only, cheap) transform animation, and was the actual cause
+// of the stutter when opening/closing the panel on phones.
+//
+// Fix: we don't need to poll at all. Both endpoints of the animation are
+// known in advance — collapsed always leaves exactly 52px of the handle
+// visible (matches translateY(calc(100% - 52px)) in the CSS), and
+// expanded always covers exactly the aside's own natural height, which
+// `offsetHeight` reports correctly regardless of the slide's transform
+// (transform never changes layout size). So we measure once, write the
+// two target values (the --board-cover custom property, and the
+// board-frame's pixel width/height) a single time, and let native CSS
+// transitions do the interpolation on the compositor/style-engine's own
+// schedule — no further JS involvement, no per-frame reads.
+// --------------------------------------------------------
+const SHEET_TRANSITION_MS = 320;
+const SHEET_COLLAPSED_COVER_PX = 52; // matches translateY(calc(100% - 52px)) in CSS
+
+function syncBoardForSheetTransition(collapsing) {
+  if (!isSheetLayoutActive()) {
+    document.documentElement.style.setProperty('--board-cover', '0px');
+    sizeBoardFrame();
+    return;
   }
-  sheetOffsetRAF = requestAnimationFrame(step);
+
+  const asideElem = document.querySelector('.content > aside');
+  const frame = document.querySelector('.board-frame');
+  const targetCover = collapsing
+    ? SHEET_COLLAPSED_COVER_PX
+    : (asideElem ? asideElem.offsetHeight : SHEET_COLLAPSED_COVER_PX);
+
+  // Let width/height transition smoothly for the duration of this one
+  // toggle only, so ordinary resizes/orientation changes elsewhere keep
+  // snapping instantly instead of animating unexpectedly.
+  if (frame) frame.classList.add('sheet-sync');
+
+  document.documentElement.style.setProperty('--board-cover', targetCover + 'px');
+  sizeBoardFrame();
+
+  if (frame) {
+    clearTimeout(frame._sheetSyncTimer);
+    frame._sheetSyncTimer = setTimeout(() => frame.classList.remove('sheet-sync'), SHEET_TRANSITION_MS + 60);
+  }
 }
 
 function setMobileSheetCollapsed(collapsed, opts = {}) {
@@ -1266,7 +1285,7 @@ function setMobileSheetCollapsed(collapsed, opts = {}) {
       setTimeout(() => handle.classList.remove('hint-bounce'), 1200);
     }
   }
-  trackBoardOffsetDuringTransition();
+  syncBoardForSheetTransition(collapsed);
 }
 
 function toggleMobileSheet() {
