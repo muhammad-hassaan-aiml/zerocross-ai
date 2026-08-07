@@ -31,9 +31,10 @@
   --ink-gray: #8a8f86;
   --tray: #2a2118;
   --tray-line: rgba(238, 240, 226, 0.14);
+  --board-cover: 66px;
 }
 
-html, body { height: 100%; margin: 0; }
+html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; touch-action: manipulation; }
 
 body {
   font-family: 'Kalam', cursive;
@@ -52,9 +53,17 @@ body {
   color: var(--chalk-dim);
 }
 
-.app-shell { min-height: 100dvh; display: flex; flex-direction: column; }
-@media (min-width: 1024px) {
-  .app-shell { height: 100dvh; overflow: hidden; }
+.app-shell {
+  height: 100vh;
+  height: 100svh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 .content {
@@ -64,20 +73,90 @@ body {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 1.75rem;
-  padding: 1.25rem;
+  gap: clamp(0.5rem, 1.6dvh, 1.75rem);
+  padding: clamp(0.5rem, 2dvh, 1.25rem) clamp(0.75rem, 3vw, 1.25rem);
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 @media (min-width: 1024px) {
   .content { flex-direction: row; align-items: stretch; gap: 3rem; padding: 2rem 3rem; }
   .content > aside { align-self: center; }
 }
+/* Short/landscape phones: go side-by-side like desktop so the board never gets squeezed vertically */
+@media (max-width: 1023px) and (orientation: landscape) and (max-height: 600px) {
+  .content { flex-direction: row; align-items: stretch; gap: clamp(0.75rem, 2.5vw, 1.5rem); }
+  .content > aside { align-self: stretch; width: min(42vw, 280px); flex-shrink: 0; }
+  .content > aside .theme-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.content > aside {
+  flex: 0 0 auto;
+  min-height: 0;
+  min-width: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+@media (max-width: 1023px) {
+  .mobile-sheet-handle { display: flex; }
+  .content > aside {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0 auto;
+    width: 100%;
+    max-width: 640px;
+    max-height: min(72dvh, 560px);
+    background: var(--wood-dark);
+    border: 1px solid var(--tray-line);
+    border-bottom: none;
+    border-radius: 18px 18px 0 0;
+    padding: 0 0.9rem calc(0.8rem + env(safe-area-inset-bottom));
+    box-shadow: 0 -16px 40px rgba(0, 0, 0, 0.5);
+    z-index: 80;
+    overscroll-behavior: contain;
+    transform: translateY(0);
+    transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.25, 1), background-color 0.3s ease, border-color 0.3s ease;
+  }
+  .content > aside.aside-collapsed { transform: translateY(calc(100% - 52px)); }
+  .board-stage { padding-bottom: var(--board-cover, 66px); }
+}
+@media (max-width: 1023px) and (orientation: landscape) and (max-height: 600px) {
+  .mobile-sheet-handle { display: none; }
+  .content > aside {
+    position: static;
+    /* NOTE: the max-width:1023px block above sets width:100% / max-width:640px /
+       margin:0 auto for the bottom-sheet layout, and — because it comes later in
+       the cascade than the "go side-by-side" block up top — it was winning here
+       too and stretching this sidebar to full width, squeezing the board off
+       gap:0. Re-declare the sidebar sizing explicitly so this (the last,
+       most-specific matching block) always wins for short-landscape phones. */
+    width: min(42vw, 280px);
+    max-width: none;
+    margin: 0;
+    max-height: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    transform: none;
+  }
+  .content > aside.aside-collapsed { transform: none; }
+  .board-stage { padding-bottom: 0 !important; }
+}
+.content > aside::-webkit-scrollbar { width: 5px; }
+.content > aside::-webkit-scrollbar-thumb { background: var(--tray-line); border-radius: 3px; }
 
 .tray-panel {
   background: var(--tray);
   border: 1px solid var(--tray-line);
   border-radius: 10px;
-  padding: 1.1rem 1.25rem;
+  padding: clamp(0.6rem, 1.9dvh, 1.1rem) clamp(0.75rem, 2.6vw, 1.25rem);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
   transition: background-color 0.3s ease, border-color 0.3s ease;
 }
@@ -85,22 +164,21 @@ body {
 .board-stage {
   min-width: 0;
   min-height: 0;
-}
-@media (min-width: 1024px) {
-  .board-stage { container-type: size; }
+  overflow: hidden;
+  transition: padding-bottom 0.32s cubic-bezier(0.22, 0.8, 0.25, 1);
 }
 
 .board-frame {
   background: linear-gradient(150deg, var(--wood), var(--wood-dark));
   border-radius: 16px;
-  padding: 14px;
+  padding: clamp(8px, 2vw, 14px);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   transition: background 0.3s ease;
-  width: min(100%, 78vh);
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  max-height: 100%;
   aspect-ratio: 1 / 1;
-}
-@media (min-width: 1024px) {
-  .board-frame { width: min(92cqw, 92cqh); }
 }
 
 .board-grid {
@@ -110,21 +188,21 @@ body {
     radial-gradient(ellipse at 25% 15%, var(--board-bg-2), transparent 55%),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
   border-radius: 10px;
-  padding: 10px;
+  padding: clamp(5px, 1.4vw, 10px);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: clamp(4px, 1.1vw, 8px);
   transition: background-color 0.3s ease;
 }
 
 .macro-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
+  gap: clamp(2px, 0.6vw, 4px);
   background: rgba(0, 0, 0, 0.12);
   border: 2px solid var(--tray-line);
   border-radius: 8px;
-  padding: 4px;
+  padding: clamp(2px, 0.6vw, 4px);
   position: relative;
   transition: box-shadow 0.3s ease, opacity 0.3s ease, border-color 0.3s ease;
 }
@@ -152,6 +230,7 @@ body {
   align-items: center;
   justify-content: center;
   position: relative;
+  touch-action: manipulation;
   transition: background-color 0.15s ease, border 0.15s ease, border-radius 0.15s ease;
 }
 .micro-cell:hover:not(:disabled) { background: rgba(238, 240, 226, 0.06); cursor: crosshair; }
@@ -197,11 +276,12 @@ body {
   font-weight: 700;
   border-radius: 10px;
   transition: filter 0.15s ease, transform 0.05s ease;
+  touch-action: manipulation;
 }
 .chalk-btn:active { transform: scale(0.97); }
 .chalk-btn:focus-visible { outline: 2px solid var(--chalk); outline-offset: 2px; }
 
-.side-btn { padding: 0.6rem 0; font-size: 0.85rem; text-align: center; border-radius: 10px; border-width: 1px; border-style: solid; }
+.side-btn { padding: clamp(0.45rem, 1.7dvh, 0.6rem) 0; font-size: 0.85rem; text-align: center; border-radius: 10px; border-width: 1px; border-style: solid; }
 .side-btn-x { color: var(--chalk-pink); border-color: var(--chalk-pink); background: rgba(240, 168, 160, 0.08); }
 .side-btn-x:hover { background: rgba(240, 168, 160, 0.18); }
 .side-btn-o { color: var(--chalk-blue); border-color: var(--chalk-blue); background: rgba(159, 211, 232, 0.08); }
@@ -339,11 +419,12 @@ body {
   border: 1px solid var(--tray-line);
   color: var(--chalk-dim);
   border-radius: 9px;
-  padding: 0.5rem 0.7rem;
+  padding: clamp(0.4rem, 1.6dvh, 0.5rem) clamp(0.5rem, 2vw, 0.7rem);
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.7rem;
   letter-spacing: 0.06em;
   cursor: pointer;
+  touch-action: manipulation;
   transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
 .icon-btn:hover { color: var(--chalk); border-color: var(--chalk-dim); background: rgba(0, 0, 0, 0.32); }
@@ -357,8 +438,8 @@ body {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.68rem;
   color: var(--chalk-dim);
-  margin-top: 0.6rem;
-  padding-top: 0.6rem;
+  margin-top: clamp(0.35rem, 1.2dvh, 0.6rem);
+  padding-top: clamp(0.35rem, 1.2dvh, 0.6rem);
   border-top: 1px solid var(--tray-line);
   display: flex;
   align-items: center;
@@ -373,6 +454,73 @@ body {
   margin-top: -0.35rem;
   margin-bottom: 0.5rem;
   min-height: 1rem;
+}
+
+.status-text {
+  font-weight: 700;
+  font-size: clamp(0.92rem, 2.5dvh, 1.125rem);
+  height: clamp(1.45rem, 3.4dvh, 1.75rem);
+  line-height: 1.2;
+}
+
+.mobile-sheet-handle {
+  display: none;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.32rem;
+  background: transparent;
+  border: none;
+  padding: 0.55rem 0 0.4rem;
+  margin: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  position: sticky;
+  top: 0;
+  min-height: 52px;
+  box-sizing: border-box;
+  z-index: 2;
+}
+.mobile-sheet-handle:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
+.handle-grip {
+  width: 34px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--tray-line);
+  flex-shrink: 0;
+}
+.handle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+.handle-text {
+  color: var(--chalk);
+  font-weight: 700;
+  font-size: 0.78rem;
+  max-width: 65vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.handle-chevron {
+  flex-shrink: 0;
+  color: var(--chalk-dim);
+  transition: transform 0.25s ease;
+}
+.aside-collapsed .handle-chevron { transform: rotate(180deg); }
+
+@keyframes handleHintBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.mobile-sheet-handle.hint-bounce .handle-chevron {
+  animation: handleHintBounce 0.55s ease-in-out 2;
+}
+.mobile-sheet-handle.hint-bounce .handle-grip {
+  background: var(--chalk-yellow);
 }
 
 .drawer-backdrop {
@@ -455,9 +603,9 @@ body {
 </svg>
 
 <div class="app-shell">
-  <header class="flex items-center justify-between gap-3 px-5 pt-6 lg:px-8 lg:pt-8">
+  <header class="flex items-center justify-between gap-2 sm:gap-3 px-3.5 pt-2.5 pb-1 sm:px-5 sm:pt-4 lg:px-8 lg:pt-8 lg:pb-0 flex-shrink-0">
     <div class="flex items-center gap-3 min-w-0">
-      <svg width="36" height="36" viewBox="0 0 100 100" aria-hidden="true" class="flex-shrink-0">
+      <svg viewBox="0 0 100 100" aria-hidden="true" class="w-7 h-7 sm:w-8 sm:h-8 lg:w-9 lg:h-9 flex-shrink-0">
         <rect width="100" height="100" rx="16" fill="var(--board-bg)"/>
         <g stroke="var(--chalk)" stroke-width="6" stroke-linecap="round">
           <line x1="34" y1="10" x2="34" y2="90"/>
@@ -472,7 +620,7 @@ body {
         <circle cx="22" cy="22" r="7" fill="none" stroke="var(--chalk-blue)" stroke-width="6"/>
       </svg>
       <div class="min-w-0">
-        <h1 class="text-3xl sm:text-4xl font-bold tracking-tight" style="color:var(--chalk)">
+        <h1 class="text-xl sm:text-2xl lg:text-4xl font-bold tracking-tight leading-tight" style="color:var(--chalk)">
           Zero<span style="color:var(--chalk-yellow)">Cross</span>
         </h1>
         <p class="eyebrow mt-0.5 truncate">A self-taught neural network powered by reinforcement learning</p>
@@ -503,14 +651,21 @@ body {
   </header>
 
   <main class="content">
-    <aside class="flex flex-col gap-4 w-full lg:w-[340px] lg:flex-shrink-0">
+    <aside class="flex flex-col gap-2 sm:gap-3 lg:gap-4 w-full lg:w-[340px] lg:flex-shrink-0">
+      <button type="button" class="mobile-sheet-handle" id="mobileSheetHandle" onclick="toggleMobileSheet()" aria-expanded="true" aria-controls="controlPanel" aria-label="Toggle game panel">
+        <span class="handle-grip" aria-hidden="true"></span>
+        <span class="handle-row">
+          <span class="handle-text" id="mobileHandleText">Loading Engine...</span>
+          <svg class="handle-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </button>
       <div class="tray-panel" id="controlPanel">
-        <span class="eyebrow block mb-3">Choose Your Side</span>
+        <span class="eyebrow block mb-1.5 sm:mb-2 lg:mb-3">Choose Your Side</span>
         <div class="grid grid-cols-2 gap-2 transition-opacity duration-300 opacity-40 pointer-events-none" id="sideSelectContainer">
           <button onclick="startGame('X')" class="chalk-btn side-btn side-btn-x">Play X</button>
           <button onclick="startGame('O')" class="chalk-btn side-btn side-btn-o">Play O</button>
         </div>
-        <p class="eyebrow mt-2" style="text-transform:none; letter-spacing:0;">Coin toss decides who opens the board.</p>
+        <p class="eyebrow mt-1.5 lg:mt-2 hidden sm:block" style="text-transform:none; letter-spacing:0;">Coin toss decides who opens the board.</p>
         
         <div class="active-model-note">
           <span class="flex-shrink-0">Engine:</span>
@@ -523,20 +678,20 @@ body {
           <span class="eyebrow">Status</span>
           <span id="moveCount" class="mono text-xs" style="color:var(--chalk-dim)"></span>
         </div>
-        <p id="statusMessage" class="text-lg font-bold h-7 flex items-center status-pending">Loading AI Engine...</p>
+        <p id="statusMessage" class="status-text flex items-center status-pending">Loading AI Engine...</p>
         <p id="statusHint" class="status-hint hidden"></p>
 
-        <div id="rosterRow" class="mono text-xs mb-4" style="display:none; color:var(--chalk-dim)">
+        <div id="rosterRow" class="mono text-xs mb-2 lg:mb-4" style="display:none; color:var(--chalk-dim)">
           You <span id="rosterYouMark" class="mark-chip chip-x">X</span>
           &nbsp;·&nbsp; Engine <span id="rosterAiMark" class="mark-chip chip-o">O</span>
         </div>
 
-        <div class="space-y-1.5 mt-4">
+        <div class="space-y-1 sm:space-y-1.5 mt-2 lg:mt-4">
           <div class="flex justify-between items-end">
             <span class="eyebrow">Position Read</span>
             <span id="evalValue" class="mono text-xs font-bold" style="color:var(--chalk)">0.00</span>
           </div>
-          <div class="w-full h-2.5 rounded-full overflow-hidden flex" style="background:rgba(0,0,0,.35); border:1px solid var(--tray-line)">
+          <div class="w-full h-2 sm:h-2.5 rounded-full overflow-hidden flex" style="background:rgba(0,0,0,.35); border:1px solid var(--tray-line)">
             <div id="evalBarX" style="width:50%; background:var(--chalk-pink); transition:width .5s ease"></div>
             <div id="evalBarO" style="width:50%; background:var(--chalk-blue); transition:width .5s ease"></div>
           </div>
@@ -546,7 +701,7 @@ body {
         </div>
       </div>
 
-      <button onclick="resetGame()" class="chalk-btn btn-primary w-full py-3.5 text-base">New Game</button>
+      <button onclick="resetGame()" class="chalk-btn btn-primary w-full py-2.5 sm:py-3 lg:py-3.5 text-sm sm:text-base flex-shrink-0">New Game</button>
     </aside>
 
     <section class="board-stage flex-1 flex items-center justify-center w-full min-h-0">
@@ -842,6 +997,162 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+let mobileSheetCollapsed = false;
+
+// --------------------------------------------------------
+// Keep the board sized to whatever space is ACTUALLY visible
+// above the bottom sheet, on every screen size and rotation.
+// Fixes the board being hidden/cropped behind the panel.
+// --------------------------------------------------------
+let sheetOffsetRAF = null;
+
+function isSheetLayoutActive() {
+  // Mirrors the CSS: bottom-sheet layout applies under 1024px,
+  // EXCEPT short landscape phones, which go side-by-side instead.
+  const isNarrow = window.matchMedia('(max-width: 1023px)').matches;
+  const isShortLandscape = window.matchMedia('(orientation: landscape) and (max-height: 600px)').matches;
+  return isNarrow && !isShortLandscape;
+}
+
+function updateBoardOffset() {
+  const stage = document.querySelector('.board-stage');
+  if (!stage) return;
+
+  if (!isSheetLayoutActive()) {
+    document.documentElement.style.setProperty('--board-cover', '0px');
+    sizeBoardFrame();
+    return;
+  }
+
+  const asideElem = document.querySelector('.content > aside');
+  if (!asideElem) return;
+
+  const rect = asideElem.getBoundingClientRect();
+  const covered = Math.max(0, Math.round(window.innerHeight - rect.top));
+  document.documentElement.style.setProperty('--board-cover', covered + 'px');
+  sizeBoardFrame();
+}
+
+// --------------------------------------------------------
+// Compute the largest square that actually fits inside the
+// visible .board-stage box (after padding / the bottom-sheet
+// cover is applied) and size .board-frame to it directly, in
+// real pixels.
+//
+// Why this is needed: the old CSS-only approach (height:100% +
+// width:auto + aspect-ratio:1/1 on .board-frame) asks the browser
+// to derive width from a height that's already fixed. Browsers
+// don't agree on how to reconcile that with max-width once the
+// container is taller than it is wide — which is exactly a phone
+// in portrait mode — so the frame could render wider than the
+// screen and get clipped on the right edge. Measuring the real
+// box in JS and setting an explicit pixel width/height removes
+// that ambiguity entirely: the board can never be bigger than the
+// space it's actually been given.
+// --------------------------------------------------------
+function sizeBoardFrame() {
+  const stage = document.querySelector('.board-stage');
+  const frame = document.querySelector('.board-frame');
+  if (!stage || !frame) return;
+
+  const rect = stage.getBoundingClientRect();
+  const cs = getComputedStyle(stage);
+  const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+
+  const availW = Math.max(0, rect.width - padX);
+  const availH = Math.max(0, rect.height - padY);
+  const size = Math.floor(Math.min(availW, availH));
+
+  if (size > 0) {
+    frame.style.width = size + 'px';
+    frame.style.height = size + 'px';
+  }
+}
+
+// Runs updateBoardOffset() on every frame for the length of the
+// sheet's slide transition, so the board resizes smoothly in sync
+// with the panel instead of jumping or lagging behind it.
+function trackBoardOffsetDuringTransition(durationMs = 400) {
+  const start = performance.now();
+  if (sheetOffsetRAF) cancelAnimationFrame(sheetOffsetRAF);
+  function step(now) {
+    updateBoardOffset();
+    if (now - start < durationMs) {
+      sheetOffsetRAF = requestAnimationFrame(step);
+    } else {
+      sheetOffsetRAF = null;
+    }
+  }
+  sheetOffsetRAF = requestAnimationFrame(step);
+}
+
+function setMobileSheetCollapsed(collapsed, opts = {}) {
+  mobileSheetCollapsed = collapsed;
+  const asideElem = document.querySelector('.content > aside');
+  const handle = document.getElementById('mobileSheetHandle');
+  if (asideElem) asideElem.classList.toggle('aside-collapsed', collapsed);
+  if (handle) {
+    handle.setAttribute('aria-expanded', String(!collapsed));
+    // When the panel auto-collapses (e.g. after picking a side), give the
+    // handle a brief highlighted bounce so it's obvious it can be pulled
+    // back open — this is how the menu "comes back up".
+    if (collapsed && opts.hint !== false) {
+      handle.classList.remove('hint-bounce');
+      void handle.offsetWidth; // restart animation if it was already playing
+      handle.classList.add('hint-bounce');
+      setTimeout(() => handle.classList.remove('hint-bounce'), 1200);
+    }
+  }
+  trackBoardOffsetDuringTransition();
+}
+
+function toggleMobileSheet() {
+  setMobileSheetCollapsed(!mobileSheetCollapsed);
+  SoundFX.click();
+}
+
+function initBoardOffsetTracking() {
+  updateBoardOffset();
+
+  const asideElem = document.querySelector('.content > aside');
+  const stageElem = document.querySelector('.board-stage');
+
+  if ('ResizeObserver' in window) {
+    if (asideElem) {
+      const ro = new ResizeObserver(() => updateBoardOffset());
+      ro.observe(asideElem);
+    }
+    if (stageElem) {
+      const roStage = new ResizeObserver(() => sizeBoardFrame());
+      roStage.observe(stageElem);
+    }
+  }
+
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(updateBoardOffset, 100);
+  });
+
+  window.addEventListener('orientationchange', () => {
+    setTimeout(updateBoardOffset, 50);
+    setTimeout(updateBoardOffset, 300);
+    setTimeout(updateBoardOffset, 600);
+  });
+
+  if (window.visualViewport) {
+    let vvTimer = null;
+    window.visualViewport.addEventListener('resize', () => {
+      clearTimeout(vvTimer);
+      vvTimer = setTimeout(updateBoardOffset, 100);
+    });
+  }
+
+  setTimeout(updateBoardOffset, 150);
+  setTimeout(updateBoardOffset, 500);
+}
+
 function getSimulations() {
   return difficultySimulations[currentDifficulty] || 200;
 }
@@ -1005,6 +1316,7 @@ function startGame(selectedSymbol) {
     updateStatus('You won the toss! Your move.', 'active');
   }
   updateBoardUI();
+  setMobileSheetCollapsed(true);
 }
 
 function resetGame() {
@@ -1013,6 +1325,7 @@ function resetGame() {
   updateEvalBar(0);
   if (engineReady) enableControls();
   document.getElementById('rosterRow').style.display = 'none';
+  setMobileSheetCollapsed(false);
   SoundFX.click();
 }
 
@@ -1341,6 +1654,7 @@ function checkGameOver() {
     else if (winner === aiInternal) { updateStatus('Engine won this one.', 'bad'); SoundFX.gameLose(); }
     else { updateStatus("Board's full — a draw.", 'default'); SoundFX.gameDraw(); }
     updateBoardUI();
+    setMobileSheetCollapsed(false);
     return true;
   }
   return false;
@@ -1361,7 +1675,10 @@ function updateHint() {
 function updateStatus(msg, kind = 'default') {
   const el = document.getElementById('statusMessage');
   el.textContent = msg;
-  el.className = 'text-lg font-bold h-7 flex items-center status-' + kind;
+  el.className = 'status-text flex items-center status-' + kind;
+
+  const handleText = document.getElementById('mobileHandleText');
+  if (handleText) handleText.textContent = msg;
 }
 
 function updateEvalBar(val) {
@@ -1404,7 +1721,27 @@ async function initEngine() {
       }
     };
 
+    // If worker.js (or its wasm/onnx assets) is missing or blocked —
+    // e.g. testing this HTML file by itself without the rest of the
+    // site next to it — the Worker fires an 'error' event rather than
+    // a message. Without this handler that error went nowhere, the
+    // engine silently never became ready, and "Choose Your Side" (and
+    // everything downstream of it) stayed disabled forever with no
+    // explanation.
+    engineWorker.onerror = (err) => {
+      if (err && err.preventDefault) err.preventDefault();
+      fallbackInit((err && err.message) || 'worker failed to load');
+    };
+
     engineWorker.postMessage({ type: 'init' });
+
+    // Watchdog: if neither init_done, init_error, nor onerror fires
+    // within a few seconds for any other reason, don't leave the UI
+    // stuck on "Initializing..." forever — drop to the local fallback
+    // engine so the game is always playable.
+    setTimeout(() => {
+      if (!engineReady) fallbackInit('engine init timed out');
+    }, 6000);
 
   } catch (e) {
     fallbackInit(e);
@@ -1420,15 +1757,30 @@ function fallbackInit(e) {
 }
 
 window.onload = () => {
-  applyThemeVariables(themes[activeThemeKey].vars);
-  initThemeGrid();
-  syncSoundUI();
-  initDifficultyUI();
+  // Engine bootstrap and board rendering go first, unconditionally — these
+  // are the two things that actually make the game playable. Everything
+  // else below (theme, sound icon state, offset tracking) is cosmetic, so
+  // it's wrapped so a failure there can't silently strand "Choose Your
+  // Side" the way an earlier crash further down used to.
   createBoard();
   updateMoveCount();
-  
   initEngine();
+
+  try {
+    applyThemeVariables(themes[activeThemeKey].vars);
+    initThemeGrid();
+    syncSoundUI();
+    initDifficultyUI();
+    initBoardOffsetTracking();
+  } catch (err) {
+    console.error('Non-critical UI setup failed (game is still playable):', err);
+  }
 };
+
+// The script runs after the DOM (but not necessarily fonts/CDN scripts)
+// has parsed, so measure once immediately too — avoids a flash of
+// incorrect board sizing while waiting for the full 'load' event.
+updateBoardOffset();
 </script>
 </body>
 </html>
