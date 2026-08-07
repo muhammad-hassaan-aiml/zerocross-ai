@@ -167,6 +167,11 @@ body {
     z-index: 80;
     overscroll-behavior: contain;
     transform: translateY(0);
+    /* Perf: hint the browser to promote the sheet to its own compositing
+       layer ahead of the slide, so animating its transform doesn't force
+       paint/layout work on the rest of the page underneath it (the board
+       stays untouched while the sheet itself moves). */
+    will-change: transform;
     transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.25, 1), background-color 0.3s ease, border-color 0.3s ease;
   }
   .content > aside.aside-collapsed { transform: translateY(calc(100% - 52px)); }
@@ -192,6 +197,7 @@ body {
     padding: 0;
     box-shadow: none;
     transform: none;
+    will-change: auto;
   }
   .content > aside.aside-collapsed { transform: none; }
   .board-stage { padding-bottom: 0 !important; }
@@ -262,12 +268,30 @@ body {
 }
 .macro-active {
   border-color: var(--chalk-yellow);
-  box-shadow: 0 0 0 3px rgba(232, 209, 122, 0.15), 0 0 26px rgba(232, 209, 122, 0.2);
+  box-shadow: 0 0 0 3px rgba(232, 209, 122, 0.15), 0 0 22px rgba(232, 209, 122, 0.16);
+}
+/* Perf: this "breathing" glow used to animate box-shadow directly every
+   frame (see the old macro-breathe keyframes, which interpolated blur/
+   spread values). Animating box-shadow forces the browser to re-rasterize
+   the blur on every frame — real cost, and it's worse here because when a
+   move sends the opponent to a finished board (activeGrid === -1), *up to
+   nine* macro boards can be glowing and animating at once. Swapping to an
+   opacity-animated pseudo-element with a static box-shadow gets the same
+   visual pulse almost entirely on the compositor (GPU), which is roughly
+   free compared to repainting box-shadow blur nine times a frame.  */
+.macro-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 3px rgba(232, 209, 122, 0.22), 0 0 34px rgba(232, 209, 122, 0.3);
+  opacity: 0;
+  pointer-events: none;
   animation: macro-breathe 2.2s ease-in-out infinite;
 }
 @keyframes macro-breathe {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(232, 209, 122, 0.15), 0 0 22px rgba(232, 209, 122, 0.16); }
-  50% { box-shadow: 0 0 0 3px rgba(232, 209, 122, 0.22), 0 0 34px rgba(232, 209, 122, 0.3); }
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
 .macro-inactive { opacity: 0.55; }
 
@@ -865,6 +889,17 @@ let engineWorker = null;
 let engineReady = false;
 let engineMode = 'wasm'; 
 
+// Perf: cache DOM references instead of calling document.getElementById()
+// by string concatenation ~99 times on every single updateBoardUI() call
+// (which fires after every human move, every AI move, every reset, and
+// every game-over). Element lookups by id are cheap individually, but on
+// slower mobile JS engines doing ~100 of them synchronously on the hot
+// "a move just happened" path is measurable, avoidable overhead. Populated
+// once in createBoard().
+let cellElems = new Array(81);
+let macroElems = new Array(9);
+let macroOverlayElems = new Array(9);
+
 const difficultySimulations = {
   easy: 50,
   medium: 200,
@@ -1111,22 +1146,26 @@ function isSheetLayoutActive() {
   return isNarrow && !isShortLandscape;
 }
 
-function updateBoardOffset() {
-  const stage = document.querySelector('.board-stage');
-  if (!stage) return;
-
+// Perf: cheap half of the old updateBoardOffset() — a single read
+// (aside's bounding rect) plus a single write (the --board-cover custom
+// property). Split out from the expensive board-resizing half below so the
+// per-frame transition loop can run this every frame (needed for the
+// covered-height CSS transition to track the sliding sheet smoothly)
+// without also paying for a full board layout/resize every frame.
+function updateCoverOnly() {
   if (!isSheetLayoutActive()) {
     document.documentElement.style.setProperty('--board-cover', '0px');
-    sizeBoardFrame();
     return;
   }
-
   const asideElem = document.querySelector('.content > aside');
   if (!asideElem) return;
-
   const rect = asideElem.getBoundingClientRect();
   const covered = Math.max(0, Math.round(window.innerHeight - rect.top));
   document.documentElement.style.setProperty('--board-cover', covered + 'px');
+}
+
+function updateBoardOffset() {
+  updateCoverOnly();
   sizeBoardFrame();
 }
 
@@ -1146,6 +1185,19 @@ function updateBoardOffset() {
 // box in JS and setting an explicit pixel width/height removes
 // that ambiguity entirely: the board can never be bigger than the
 // space it's actually been given.
+//
+// Perf note: this is the expensive half of the old updateBoardOffset()
+// — it reads layout (getBoundingClientRect + getComputedStyle) and then
+// writes layout-affecting inline styles on .board-frame, which forces a
+// layout/paint of the entire 81-cell board subtree. Calling this on
+// every single animation frame during the mobile sheet's slide (previously
+// ~24 times over 400ms) was the single biggest source of the "lag on
+// phones" — each call forces the browser to synchronously flush layout
+// right after the previous frame's style write ("layout thrashing").
+// It's now throttled by the caller (trackBoardOffsetDuringTransition)
+// during that specific animation, while still running on every call from
+// non-animated call sites (initial load, ResizeObserver, window resize)
+// where it only fires occasionally anyway.
 // --------------------------------------------------------
 function sizeBoardFrame() {
   const stage = document.querySelector('.board-stage');
@@ -1167,17 +1219,30 @@ function sizeBoardFrame() {
   }
 }
 
-// Runs updateBoardOffset() on every frame for the length of the
-// sheet's slide transition, so the board resizes smoothly in sync
-// with the panel instead of jumping or lagging behind it.
+// Runs during the sheet's slide transition so the board resizes smoothly
+// in sync with the panel instead of jumping or lagging behind it.
+//
+// Perf: previously called the expensive updateBoardOffset()+sizeBoardFrame()
+// combo on every single rAF tick (~60fps) for the whole transition. That's
+// ~24 forced full-board layout passes in 400ms — the main cause of visible
+// stutter on mobile when opening/closing the panel, which happens after
+// nearly every move (see setMobileSheetCollapsed calls below). Now: the
+// cheap cover-height sync still runs every frame (keeps the CSS padding
+// transition tracking the sheet precisely), but the expensive board resize
+// is throttled to roughly every 3rd frame (~20fps) — still visually smooth,
+// with a final precise pass once the transition settles.
 function trackBoardOffsetDuringTransition(durationMs = 400) {
   const start = performance.now();
   if (sheetOffsetRAF) cancelAnimationFrame(sheetOffsetRAF);
+  let frameCount = 0;
   function step(now) {
-    updateBoardOffset();
+    frameCount++;
+    updateCoverOnly();
+    if (frameCount % 3 === 0) sizeBoardFrame();
     if (now - start < durationMs) {
       sheetOffsetRAF = requestAnimationFrame(step);
     } else {
+      sizeBoardFrame();
       sheetOffsetRAF = null;
     }
   }
@@ -1323,16 +1388,26 @@ function markMarkup(val, idx) {
   const p1Symbol = humanInternal === 1 ? humanSymbol : aiSymbol;
   const isX = (val === 1 && p1Symbol === 'X') || (val === -1 && p1Symbol === 'O');
 
+  // Perf: per-cell marks intentionally do NOT use filter="url(#chalk-rough)"
+  // (the feTurbulence + feDisplacementMap filter) any more. That filter is
+  // real CPU/GPU cost per element, and mobile browsers largely can't
+  // hardware-accelerate SVG filters — it's fine for the handful of big
+  // win-stamps (stampMarkup below keeps it, max 9 on the board), but a full
+  // board has up to 81 of these marks, and computing a turbulence filter for
+  // each one on every render was a major, compounding source of lag as a
+  // game fills up. The hand-drawn "chalk" wobble here still comes through
+  // via the randomized Bezier control points (seededJitter), so the look is
+  // barely affected while the cost of drawing it drops enormously.
   if (isX) {
     const j = n => seededJitter(idx + n, 6);
     return `<svg class="mark mark-x" viewBox="0 0 100 100" style="transform:rotate(${rot}deg)">
-      <path data-draw pathLength="1" filter="url(#chalk-rough)" d="M ${18 + j(1)} ${20 + j(2)} Q 50 48 ${82 + j(3)} ${80 + j(4)}"/>
-      <path data-draw pathLength="1" filter="url(#chalk-rough)" d="M ${82 + j(5)} ${22 + j(6)} Q 50 48 ${16 + j(7)} ${78 + j(8)}"/>
+      <path data-draw pathLength="1" d="M ${18 + j(1)} ${20 + j(2)} Q 50 48 ${82 + j(3)} ${80 + j(4)}"/>
+      <path data-draw pathLength="1" d="M ${82 + j(5)} ${22 + j(6)} Q 50 48 ${16 + j(7)} ${78 + j(8)}"/>
     </svg>`;
   }
   const j = n => seededJitter(idx + n, 3);
   return `<svg class="mark mark-o" viewBox="0 0 100 100" style="transform:rotate(${rot}deg)">
-    <path data-draw pathLength="1" filter="url(#chalk-rough)" d="M ${52 + j(1)} 14
+    <path data-draw pathLength="1" d="M ${52 + j(1)} 14
       C 30 14 14 30 14 50
       C 14 71 31 87 51 86
       C 72 86 87 70 86 49
@@ -1373,11 +1448,13 @@ function createBoard() {
     const macroElem = document.createElement('div');
     macroElem.id = `macro-${m}`;
     macroElem.className = 'macro-grid';
+    macroElems[m] = macroElem;
 
     const overlay = document.createElement('div');
     overlay.id = `macro-overlay-${m}`;
     overlay.className = 'overlay-won hidden';
     macroElem.appendChild(overlay);
+    macroOverlayElems[m] = overlay;
 
     for (let u = 0; u < 9; u++) {
       const idx = m * 9 + u;
@@ -1388,6 +1465,7 @@ function createBoard() {
       cellElem.setAttribute('aria-label', `Cell ${idx + 1}`);
       cellElem.onclick = () => handleHumanMove(m, u);
       macroElem.appendChild(cellElem);
+      cellElems[idx] = cellElem;
     }
     boardElem.appendChild(macroElem);
   }
@@ -1462,8 +1540,8 @@ function updateRoster() {
 function updateBoardUI() {
   updateHint();
   for (let m = 0; m < 9; m++) {
-    const macroElem = document.getElementById(`macro-${m}`);
-    const overlay = document.getElementById(`macro-overlay-${m}`);
+    const macroElem = macroElems[m];
+    const overlay = macroOverlayElems[m];
     let isMacroActive = false;
 
     if (gameActive && macroStatus[m] === 0) {
@@ -1497,7 +1575,7 @@ function updateBoardUI() {
 
     for (let u = 0; u < 9; u++) {
       const idx = m * 9 + u;
-      const cellElem = document.getElementById(`cell-${idx}`);
+      const cellElem = cellElems[idx];
       const val = board[idx];
 
       let cellClass = 'micro-cell';
