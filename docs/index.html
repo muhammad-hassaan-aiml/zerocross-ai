@@ -38,7 +38,10 @@ html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: non
 
 body {
   font-family: 'Kalam', cursive;
-  background: var(--wood-dark);
+  background:
+    radial-gradient(120% 90% at 50% -10%, rgba(255, 255, 255, 0.05), transparent 60%),
+    radial-gradient(140% 100% at 50% 110%, rgba(0, 0, 0, 0.35), transparent 55%),
+    var(--wood-dark);
   color: var(--chalk);
   transition: background-color 0.3s ease, color 0.3s ease;
 }
@@ -79,6 +82,50 @@ body {
   min-width: 0;
   overflow: hidden;
 }
+
+/* --------------------------------------------------------
+   .mobile-sheet-handle BASE RULE
+   Moved here (before the responsive @media blocks below) so the
+   cascade behaves as intended: this unconditional rule sets the
+   default (hidden, desktop-first), and the media queries further
+   down — which set display:flex under 1023px and display:none
+   again for short-landscape phones — correctly override it in
+   source order. It previously lived far below, after all the
+   game/board rules, as an unconditional (non-media-query) block.
+   Since it had the same specificity as the media-query overrides,
+   *source order* decided the winner — and because it came later
+   in the file, its unconditional `display:none` always won,
+   regardless of viewport. That silently kept the handle at 0x0
+   and unclickable on every screen size, which is why tapping it
+   never worked no matter what gesture/touch-action was tried.
+-------------------------------------------------------- */
+.mobile-sheet-handle {
+  display: none;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.32rem;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), transparent 70%);
+  border: none;
+  border-radius: 18px 18px 0 0;
+  padding: 0.55rem 0 0.4rem;
+  margin: 0;
+  cursor: pointer;
+  /* NOT "manipulation": this handle sits inside the scrollable aside
+     (overflow-y:auto, real overflow once expanded). "manipulation" still
+     permits native panning, so a tap with even a pixel of finger/mouse
+     drift gets swallowed as a scroll-the-panel gesture instead of firing
+     the click — which is exactly the "tapping it mid-game does nothing"
+     bug. "none" forces every touch starting here to resolve as a tap. */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  position: sticky;
+  top: 0;
+  min-height: 52px;
+  box-sizing: border-box;
+  z-index: 2;
+}
+
 @media (min-width: 1024px) {
   .content { flex-direction: row; align-items: stretch; gap: 3rem; padding: 2rem 3rem; }
   .content > aside { align-self: center; }
@@ -157,8 +204,11 @@ body {
   border: 1px solid var(--tray-line);
   border-radius: 10px;
   padding: clamp(0.6rem, 1.9dvh, 1.1rem) clamp(0.75rem, 2.6vw, 1.25rem);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-  transition: background-color 0.3s ease, border-color 0.3s ease;
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.35),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 0 0 1px rgba(0, 0, 0, 0.2) inset;
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .board-stage {
@@ -172,8 +222,12 @@ body {
   background: linear-gradient(150deg, var(--wood), var(--wood-dark));
   border-radius: 16px;
   padding: clamp(8px, 2vw, 14px);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-  transition: background 0.3s ease;
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.55),
+    0 2px 0 rgba(255, 255, 255, 0.06) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 -30px 50px rgba(0, 0, 0, 0.25) inset;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
   height: 100%;
   width: auto;
   max-width: 100%;
@@ -209,6 +263,11 @@ body {
 .macro-active {
   border-color: var(--chalk-yellow);
   box-shadow: 0 0 0 3px rgba(232, 209, 122, 0.15), 0 0 26px rgba(232, 209, 122, 0.2);
+  animation: macro-breathe 2.2s ease-in-out infinite;
+}
+@keyframes macro-breathe {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(232, 209, 122, 0.15), 0 0 22px rgba(232, 209, 122, 0.16); }
+  50% { box-shadow: 0 0 0 3px rgba(232, 209, 122, 0.22), 0 0 34px rgba(232, 209, 122, 0.3); }
 }
 .macro-inactive { opacity: 0.55; }
 
@@ -241,10 +300,12 @@ body {
 .micro-cell.cell-last-x {
   border: 2px solid var(--chalk-pink);
   border-radius: 6px;
+  box-shadow: 0 0 12px rgba(240, 168, 160, 0.35);
 }
 .micro-cell.cell-last-o {
   border: 2px solid var(--chalk-blue);
   border-radius: 6px;
+  box-shadow: 0 0 12px rgba(159, 211, 232, 0.35);
 }
 
 .mark { width: 66%; height: 66%; overflow: visible; }
@@ -259,7 +320,17 @@ body {
 @keyframes chalk-draw { to { stroke-dashoffset: 0; } }
 
 .overlay-won { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 20; pointer-events: none; }
-.stamp { width: 76%; height: 76%; }
+.stamp {
+  width: 76%;
+  height: 76%;
+  transform: rotate(var(--stamp-rot, 0deg));
+  animation: stamp-down 0.32s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes stamp-down {
+  0% { opacity: 0; transform: rotate(var(--stamp-rot, 0deg)) scale(1.7); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: rotate(var(--stamp-rot, 0deg)) scale(1); }
+}
 .stamp-ring { fill: none; stroke-width: 6; }
 
 .stamp-win-x .stamp-ring { stroke: var(--ink-red); }
@@ -281,16 +352,26 @@ body {
 .chalk-btn:active { transform: scale(0.97); }
 .chalk-btn:focus-visible { outline: 2px solid var(--chalk); outline-offset: 2px; }
 
-.side-btn { padding: clamp(0.45rem, 1.7dvh, 0.6rem) 0; font-size: 0.85rem; text-align: center; border-radius: 10px; border-width: 1px; border-style: solid; }
+.side-btn { padding: clamp(0.45rem, 1.7dvh, 0.6rem) 0; font-size: 0.85rem; text-align: center; border-radius: 10px; border-width: 1px; border-style: solid; transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease; }
 .side-btn-x { color: var(--chalk-pink); border-color: var(--chalk-pink); background: rgba(240, 168, 160, 0.08); }
-.side-btn-x:hover { background: rgba(240, 168, 160, 0.18); }
+.side-btn-x:hover { background: rgba(240, 168, 160, 0.18); box-shadow: 0 6px 16px rgba(240, 168, 160, 0.18); transform: translateY(-1px); }
 .side-btn-o { color: var(--chalk-blue); border-color: var(--chalk-blue); background: rgba(159, 211, 232, 0.08); }
-.side-btn-o:hover { background: rgba(159, 211, 232, 0.18); }
+.side-btn-o:hover { background: rgba(159, 211, 232, 0.18); box-shadow: 0 6px 16px rgba(159, 211, 232, 0.18); transform: translateY(-1px); }
 .side-btn-y { color: var(--chalk-yellow); border-color: var(--chalk-yellow); background: rgba(232, 209, 122, 0.08); }
-.side-btn-y:hover { background: rgba(232, 209, 122, 0.18); }
+.side-btn-y:hover { background: rgba(232, 209, 122, 0.18); box-shadow: 0 6px 16px rgba(232, 209, 122, 0.18); transform: translateY(-1px); }
 
-.btn-primary { background: var(--chalk-yellow); color: var(--wood-dark); }
-.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary {
+  background: linear-gradient(155deg, #f0dc9a, var(--chalk-yellow));
+  color: var(--wood-dark);
+  box-shadow: 0 10px 24px rgba(232, 209, 122, 0.22), 0 1px 0 rgba(255,255,255,0.35) inset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}
+.btn-primary:hover { filter: brightness(1.08); box-shadow: 0 12px 30px rgba(232, 209, 122, 0.32), 0 1px 0 rgba(255,255,255,0.35) inset; }
+.btn-primary svg { flex-shrink: 0; transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+.btn-primary:hover svg { transform: rotate(-135deg); }
 
 .mark-chip { font-family: 'JetBrains Mono', monospace; font-weight: 700; padding: 0.05rem 0.4rem; border-radius: 4px; border-width: 1px; border-style: solid; }
 .chip-x { color: var(--chalk-pink); border-color: var(--chalk-pink); }
@@ -351,7 +432,25 @@ body {
   transform: translateY(-1px);
 }
 .theme-card:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
+.theme-card { position: relative; }
 .theme-card.selected { border-color: var(--chalk-yellow); box-shadow: 0 0 0 1px var(--chalk-yellow) inset; }
+.theme-card-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--chalk-yellow);
+  color: var(--wood-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.theme-card.selected .theme-card-check { opacity: 1; transform: scale(1); }
 .theme-swatch-row {
   display: flex;
   gap: 3px;
@@ -397,7 +496,7 @@ body {
   transition: background-color 0.2s ease;
   flex-shrink: 0;
 }
-.toggle-switch.on { background: var(--chalk-yellow); }
+.toggle-switch.on { background: var(--chalk-yellow); box-shadow: 0 0 10px rgba(232, 209, 122, 0.45); }
 .toggle-knob {
   position: absolute;
   top: 2px;
@@ -425,9 +524,9 @@ body {
   letter-spacing: 0.06em;
   cursor: pointer;
   touch-action: manipulation;
-  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
-.icon-btn:hover { color: var(--chalk); border-color: var(--chalk-dim); background: rgba(0, 0, 0, 0.32); }
+.icon-btn:hover { color: var(--chalk); border-color: var(--chalk-dim); background: rgba(0, 0, 0, 0.32); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); }
 .icon-btn svg { transition: transform 0.4s ease; flex-shrink: 0; }
 .icon-btn:hover svg { transform: rotate(45deg); }
 .icon-btn:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
@@ -462,34 +561,27 @@ body {
   height: clamp(1.45rem, 3.4dvh, 1.75rem);
   line-height: 1.2;
 }
-
-.mobile-sheet-handle {
-  display: none;
-  width: 100%;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.32rem;
-  background: transparent;
-  border: none;
-  padding: 0.55rem 0 0.4rem;
-  margin: 0;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-  position: sticky;
-  top: 0;
-  min-height: 52px;
-  box-sizing: border-box;
-  z-index: 2;
+.status-dot {
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  margin-right: 0.5rem;
+  flex-shrink: 0;
 }
+
 .mobile-sheet-handle:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
 .handle-grip {
-  width: 34px;
+  width: 36px;
   height: 4px;
   border-radius: 999px;
   background: var(--tray-line);
   flex-shrink: 0;
+  transition: background-color 0.2s ease;
 }
+.mobile-sheet-handle:hover .handle-grip { background: var(--chalk-dim); }
 .handle-row {
   display: flex;
   align-items: center;
@@ -497,13 +589,13 @@ body {
   font-family: 'JetBrains Mono', monospace;
 }
 .handle-text {
-  color: var(--chalk);
   font-weight: 700;
   font-size: 0.78rem;
   max-width: 65vw;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 0.2s ease;
 }
 .handle-chevron {
   flex-shrink: 0;
@@ -557,6 +649,7 @@ body {
   justify-content: space-between;
   padding: 1.25rem 1.25rem 1rem;
   border-bottom: 1px solid var(--tray-line);
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), transparent);
   flex-shrink: 0;
 }
 .drawer-header h2 {
@@ -620,8 +713,8 @@ body {
         <circle cx="22" cy="22" r="7" fill="none" stroke="var(--chalk-blue)" stroke-width="6"/>
       </svg>
       <div class="min-w-0">
-        <h1 class="text-xl sm:text-2xl lg:text-4xl font-bold tracking-tight leading-tight" style="color:var(--chalk)">
-          Zero<span style="color:var(--chalk-yellow)">Cross</span>
+        <h1 class="text-xl sm:text-2xl lg:text-4xl font-bold tracking-tight leading-tight" style="color:var(--chalk); text-shadow:0 0 18px rgba(238,240,226,0.18);">
+          Zero<span style="color:var(--chalk-yellow); text-shadow:0 0 18px rgba(232,209,122,0.35);">Cross</span>
         </h1>
         <p class="eyebrow mt-0.5 truncate">A self-taught neural network powered by reinforcement learning</p>
       </div>
@@ -691,9 +784,10 @@ body {
             <span class="eyebrow">Position Read</span>
             <span id="evalValue" class="mono text-xs font-bold" style="color:var(--chalk)">0.00</span>
           </div>
-          <div class="w-full h-2 sm:h-2.5 rounded-full overflow-hidden flex" style="background:rgba(0,0,0,.35); border:1px solid var(--tray-line)">
+          <div class="w-full h-2 sm:h-2.5 rounded-full overflow-hidden flex relative" style="background:rgba(0,0,0,.35); border:1px solid var(--tray-line)">
             <div id="evalBarX" style="width:50%; background:var(--chalk-pink); transition:width .5s ease"></div>
             <div id="evalBarO" style="width:50%; background:var(--chalk-blue); transition:width .5s ease"></div>
+            <div aria-hidden="true" style="position:absolute; left:50%; top:0; bottom:0; width:1px; background:rgba(0,0,0,.3); box-shadow:0 0 0 1px rgba(255,255,255,.08);"></div>
           </div>
           <div class="flex justify-between mono" style="font-size:.6rem; color:var(--chalk-dim)">
             <span>X ahead</span><span>even</span><span>O ahead</span>
@@ -701,7 +795,10 @@ body {
         </div>
       </div>
 
-      <button onclick="resetGame()" class="chalk-btn btn-primary w-full py-2.5 sm:py-3 lg:py-3.5 text-sm sm:text-base flex-shrink-0">New Game</button>
+      <button onclick="resetGame()" class="chalk-btn btn-primary w-full py-2.5 sm:py-3 lg:py-3.5 text-sm sm:text-base flex-shrink-0">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 21v-6h6"/></svg>
+        New Game
+      </button>
     </aside>
 
     <section class="board-stage flex-1 flex items-center justify-center w-full min-h-0">
@@ -1187,6 +1284,9 @@ function initThemeGrid() {
 
     const v = theme.vars;
     card.innerHTML = `
+      <span class="theme-card-check" aria-hidden="true">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      </span>
       <span class="theme-swatch-row">
         <span style="background:${v['--board-bg']}"></span>
         <span style="background:${v['--chalk-yellow']}"></span>
@@ -1244,7 +1344,7 @@ function markMarkup(val, idx) {
 function stampMarkup(status, macroIdx) {
   const rot = seededJitter(macroIdx + 50, 10).toFixed(1);
   if (status === 2) {
-    return `<svg class="stamp stamp-draw" viewBox="0 0 100 100" style="transform:rotate(${rot}deg)">
+    return `<svg class="stamp stamp-draw" viewBox="0 0 100 100" style="--stamp-rot:${rot}deg">
       <circle class="stamp-ring" cx="50" cy="50" r="40" filter="url(#chalk-rough)"/>
       <text x="50" y="59" text-anchor="middle" font-size="34">–</text>
     </svg>`;
@@ -1254,7 +1354,7 @@ function stampMarkup(status, macroIdx) {
   const letter = isX ? 'X' : 'O';
   const winClass = isX ? 'stamp-win-x' : 'stamp-win-o';
 
-  return `<svg class="stamp ${winClass}" viewBox="0 0 100 100" style="transform:rotate(${rot}deg)">
+  return `<svg class="stamp ${winClass}" viewBox="0 0 100 100" style="--stamp-rot:${rot}deg">
     <circle class="stamp-ring" cx="50" cy="50" r="40" filter="url(#chalk-rough)"/>
     <text x="50" y="61" text-anchor="middle" font-size="38">${letter}</text>
   </svg>`;
@@ -1432,6 +1532,11 @@ async function handleHumanMove(macro, micro) {
   const idx = macro * 9 + micro;
   if (board[idx] !== 0 || macroStatus[macro] !== 0) return;
   if (activeGrid !== -1 && activeGrid !== macro) return;
+
+  // If the panel is pulled up (e.g. the player tapped the handle mid-game
+  // just to check status or reach "New Game"), tuck it back down the moment
+  // they actually make a move, instead of leaving it covering the board.
+  if (!mobileSheetCollapsed) setMobileSheetCollapsed(true, { hint: false });
 
   makeMove(idx, humanInternal);
   if (checkGameOver()) return;
@@ -1674,11 +1779,19 @@ function updateHint() {
 
 function updateStatus(msg, kind = 'default') {
   const el = document.getElementById('statusMessage');
-  el.textContent = msg;
+  el.innerHTML = '';
+  const dot = document.createElement('span');
+  dot.className = 'status-dot';
+  dot.setAttribute('aria-hidden', 'true');
+  el.appendChild(dot);
+  el.appendChild(document.createTextNode(msg));
   el.className = 'status-text flex items-center status-' + kind;
 
   const handleText = document.getElementById('mobileHandleText');
-  if (handleText) handleText.textContent = msg;
+  if (handleText) {
+    handleText.textContent = msg;
+    handleText.className = 'handle-text status-' + kind;
+  }
 }
 
 function updateEvalBar(val) {
