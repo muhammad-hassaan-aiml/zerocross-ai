@@ -1219,6 +1219,15 @@ function applyThemeVariables(vars) {
   }
 }
 
+// Kept separate from applyThemeVariables (which also runs on hover-preview)
+// so previewing a theme in Settings doesn't flicker the browser's own
+// chrome (address bar / task-switcher card) — only a committed selection
+// (or the initial boot) updates it.
+function applyThemeColorMeta(vars) {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', vars['--wood-dark']);
+}
+
 function previewTheme(key) { if (themes[key]) applyThemeVariables(themes[key].vars); }
 function revertPreview() { applyThemeVariables(themes[activeThemeKey].vars); }
 
@@ -1227,14 +1236,45 @@ function selectTheme(key) {
   activeThemeKey = key;
   localStorage.setItem('zc_theme', key);
   applyThemeVariables(themes[key].vars);
+  applyThemeColorMeta(themes[key].vars);
   updateThemeGridSelection();
   SoundFX.click();
 }
 
+// The drawer is role="dialog" aria-modal="true", which implies focus stays
+// inside it while open and returns to whatever opened it on close. Without
+// this, focus silently stayed on the (now visually covered) page behind the
+// backdrop, so Tab could reach controls a sighted mouse user couldn't see.
+let settingsTriggerElem = null;
+
+function getSettingsFocusable() {
+  return Array.from(document.querySelectorAll(
+    '#settingsModal button, #settingsModal select, #settingsModal [href], #settingsModal [tabindex]:not([tabindex="-1"])'
+  ));
+}
+
+function trapSettingsFocus(e) {
+  if (e.key !== 'Tab') return;
+  const focusables = getSettingsFocusable();
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 function openSettingsModal() {
+  settingsTriggerElem = document.activeElement;
   document.getElementById('settingsBackdrop').classList.add('open');
   document.getElementById('settingsModal').classList.add('open');
   SoundFX.drawerOpen();
+  document.querySelector('.modal-close-btn')?.focus();
+  document.addEventListener('keydown', trapSettingsFocus);
 }
 
 function closeSettingsModal() {
@@ -1242,6 +1282,11 @@ function closeSettingsModal() {
   document.getElementById('settingsBackdrop').classList.remove('open');
   document.getElementById('settingsModal').classList.remove('open');
   SoundFX.drawerClose();
+  document.removeEventListener('keydown', trapSettingsFocus);
+  if (settingsTriggerElem && typeof settingsTriggerElem.focus === 'function') {
+    settingsTriggerElem.focus();
+  }
+  settingsTriggerElem = null;
 }
 
 window.addEventListener('keydown', (e) => {
@@ -2064,6 +2109,7 @@ window.onload = () => {
 
   try {
     applyThemeVariables(themes[activeThemeKey].vars);
+    applyThemeColorMeta(themes[activeThemeKey].vars);
     initThemeGrid();
     syncSoundUI();
     initDifficultyUI();
