@@ -6,15 +6,13 @@
 <meta name="theme-color" content="#1e332a">
 <title>ZeroCross | Ultimate Tic-Tac-Toe Engine</title>
 
-<!-- ==========================================================
-     BOOT SPLASH (critical, dependency-free)
+<!-- BOOT SPLASH (critical, dependency-free)
      Deliberately placed first, before Tailwind/fonts/anything else,
      and written with hardcoded colors + a system font stack instead
      of the site's CSS variables / Google Font / Tailwind classes.
      Those all load asynchronously, so if this splash depended on
      them it could itself render half-styled -- defeating the point.
-     This block is guaranteed correct on the very first paint.
-     ========================================================== -->
+     This block is guaranteed correct on the very first paint. -->
 <style>
   #bootSplash {
     position: fixed;
@@ -50,7 +48,6 @@
   }
 </style>
 <script>
-  // --------------------------------------------------------------
   // Safety net for coi-serviceworker.js.
   //
   // coi-serviceworker.js registers a service worker whose whole job is to
@@ -72,7 +69,6 @@
   // at most once per tab session (guarded via sessionStorage so it can
   // never loop), if the browser hasn't reached isolation on its own
   // shortly after load.
-  // --------------------------------------------------------------
   (function () {
     try {
       if (window.crossOriginIsolated) return;
@@ -169,8 +165,7 @@ body {
   overflow: hidden;
 }
 
-/* --------------------------------------------------------
-   .mobile-sheet-handle BASE RULE
+/* .mobile-sheet-handle BASE RULE
    Moved here (before the responsive @media blocks below) so the
    cascade behaves as intended: this unconditional rule sets the
    default (hidden, desktop-first), and the media queries further
@@ -183,8 +178,7 @@ body {
    in the file, its unconditional `display:none` always won,
    regardless of viewport. That silently kept the handle at 0x0
    and unclickable on every screen size, which is why tapping it
-   never worked no matter what gesture/touch-action was tried.
--------------------------------------------------------- */
+   never worked no matter what gesture/touch-action was tried. */
 .mobile-sheet-handle {
   display: none;
   width: 100%;
@@ -928,7 +922,15 @@ body {
         <p id="statusMessage" class="status-text flex items-center status-pending">Loading AI Engine...</p>
         <p id="statusHint" class="status-hint hidden"></p>
 
-        <div id="rosterRow" class="mono text-xs mb-2 lg:mb-4" style="display:none; color:var(--chalk-dim)"></div>
+        <div id="rosterRow" class="mono text-xs mb-2" style="display:none; color:var(--chalk-dim)"></div>
+        <div id="statsRow" class="items-center justify-between mb-2 lg:mb-4" style="display:none; background:rgba(0,0,0,0.15); border:1px solid var(--tray-line); border-radius:6px; padding:0.4rem 0.6rem;">
+          <span class="eyebrow" style="margin:0;">Record vs AI</span>
+          <div class="mono text-xs font-bold">
+            <span id="statW" style="color:var(--chalk-pink)">0</span>W <span style="color:var(--chalk-dim); font-weight:normal; margin:0 2px">|</span>
+            <span id="statL" style="color:var(--chalk-blue)">0</span>L <span style="color:var(--chalk-dim); font-weight:normal; margin:0 2px">|</span>
+            <span id="statD" style="color:var(--chalk)">0</span>D
+          </div>
+        </div>
 
         <div id="evalContainer" class="space-y-1 sm:space-y-1.5 mt-2 lg:mt-4 transition-opacity duration-300">
           <div class="flex justify-between items-end">
@@ -1016,6 +1018,8 @@ let currentGameId = 0;
 let engineWorker = null;
 let engineReady = false;
 let engineMode = 'wasm'; 
+
+let gameStats = JSON.parse(localStorage.getItem('zc_stats')) || { w: 0, l: 0, d: 0 };
 
 // Perf: cache DOM references instead of calling document.getElementById()
 // by string concatenation ~99 times on every single updateBoardUI() call
@@ -1304,11 +1308,9 @@ window.addEventListener('keydown', (e) => {
 
 let mobileSheetCollapsed = false;
 
-// --------------------------------------------------------
 // Keep the board sized to whatever space is ACTUALLY visible
 // above the bottom sheet, on every screen size and rotation.
 // Fixes the board being hidden/cropped behind the panel.
-// --------------------------------------------------------
 function isSheetLayoutActive() {
   // Mirrors the CSS: bottom-sheet layout applies under 1024px,
   // EXCEPT short landscape phones, which go side-by-side instead.
@@ -1560,7 +1562,7 @@ function stampMarkup(status, macroIdx) {
 }
 
 function enableControls() {
-  updateStatus('Ready — pick a mode.', 'good');
+  updateStatus('Ready — pick a side or mode.', 'good');
   document.getElementById('sideSelectContainer').classList.remove('opacity-40', 'pointer-events-none');
 }
 
@@ -1660,6 +1662,7 @@ function resetGame() {
   updateEvalBar(0);
   if (engineReady) enableControls();
   document.getElementById('rosterRow').style.display = 'none';
+  document.getElementById('statsRow').style.display = 'none';
   setMobileSheetCollapsed(false);
   SoundFX.click();
 }
@@ -1684,12 +1687,33 @@ function updateMoveCount() {
   if (el) el.textContent = moveCount > 0 ? `Move ${moveCount}` : '';
 }
 
+function updateStatsUI() {
+  document.getElementById('statW').textContent = gameStats.w;
+  document.getElementById('statL').textContent = gameStats.l;
+  document.getElementById('statD').textContent = gameStats.d;
+}
+
+function saveStats(result) {
+  if (isPvP) return;
+  if (result === 'win') gameStats.w++;
+  else if (result === 'loss') gameStats.l++;
+  else if (result === 'draw') gameStats.d++;
+  localStorage.setItem('zc_stats', JSON.stringify(gameStats));
+  updateStatsUI();
+}
+
 function updateRoster() {
   const rosterRow = document.getElementById('rosterRow');
+  const statsRow = document.getElementById('statsRow');
   if (isPvP) {
     rosterRow.innerHTML = `Player 1 <span class="mark-chip chip-x">X</span> &nbsp;·&nbsp; Player 2 <span class="mark-chip chip-o">O</span>`;
+    statsRow.style.display = 'none';
+    rosterRow.classList.add('mb-2', 'lg:mb-4');
   } else {
     rosterRow.innerHTML = `You <span id="rosterYouMark" class="mark-chip ${humanSymbol === 'X' ? 'chip-x' : 'chip-o'}">${humanSymbol}</span> &nbsp;·&nbsp; Engine <span id="rosterAiMark" class="mark-chip ${aiSymbol === 'X' ? 'chip-x' : 'chip-o'}">${aiSymbol}</span>`;
+    updateStatsUI();
+    statsRow.style.display = 'flex';
+    rosterRow.classList.remove('lg:mb-4');
   }
   rosterRow.style.display = 'block';
 }
@@ -1791,9 +1815,7 @@ async function handleHumanMove(macro, micro) {
   }
 }
 
-// --------------------------------------------------------
 // WASM Orchestration Loop (NOW HANDLED BY WORKER)
-// --------------------------------------------------------
 async function triggerAIMove() {
   if (!engineReady) return;
 
@@ -1841,10 +1863,7 @@ function handleEngineError(err) {
   document.getElementById('statusMessage').style.lineHeight = "1.1";
   updateStatus('Error: ' + (err.message || err), 'bad');
 }
-
-// --------------------------------------------------------
 // Fallback engine — pure JS, no WASM/ONNX required.
-// --------------------------------------------------------
 async function triggerFallbackAIMove() {
   const thinkMs = { easy: 250, medium: 450, hard: 700 }[currentDifficulty] || 400;
   await new Promise(r => setTimeout(r, thinkMs));
@@ -2007,9 +2026,21 @@ function checkGameOver() {
       else if (winner === -1) { updateStatus('O wins the game!', 'good'); SoundFX.gameWin(); }
       else { updateStatus("Board's full — a draw.", 'default'); SoundFX.gameDraw(); }
     } else {
-      if (winner === humanInternal) { updateStatus('You won this one.', 'good'); SoundFX.gameWin(); }
-      else if (winner === aiInternal) { updateStatus('Engine won this one.', 'bad'); SoundFX.gameLose(); }
-      else { updateStatus("Board's full — a draw.", 'default'); SoundFX.gameDraw(); }
+      if (winner === humanInternal) { 
+        updateStatus('You won this one.', 'good'); 
+        SoundFX.gameWin(); 
+        saveStats('win');
+      }
+      else if (winner === aiInternal) { 
+        updateStatus('Engine won this one.', 'bad'); 
+        SoundFX.gameLose(); 
+        saveStats('loss');
+      }
+      else { 
+        updateStatus("Board's full — a draw.", 'default'); 
+        SoundFX.gameDraw(); 
+        saveStats('draw');
+      }
     }
     updateBoardUI();
     setMobileSheetCollapsed(false);
@@ -2067,9 +2098,7 @@ function updateEvalBar(val) {
   document.getElementById('evalBarO').style.width = `${100 - xPercent}%`;
 }
 
-// --------------------------------------------------------
 // Initialize Engine via Worker
-// --------------------------------------------------------
 async function initEngine() {
   try {
     updateStatus("Initializing Web Worker...", "pending");
@@ -2129,9 +2158,7 @@ function fallbackInit(e) {
   enableControls();
 }
 
-// --------------------------------------------------------
 // Boot splash reveal
-// --------------------------------------------------------
 function revealApp() {
   const splash = document.getElementById('bootSplash');
   if (!splash || splash.classList.contains('boot-hidden')) return;
