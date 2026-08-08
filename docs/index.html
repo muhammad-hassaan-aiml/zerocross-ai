@@ -170,7 +170,10 @@ body {
     align-self: stretch; 
     height: 100%;
     max-height: 100%;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 1rem;
+    padding-right: 8px;
   }
 }
 
@@ -187,7 +190,6 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding-right: 4px; 
 }
 
 @media (max-width: 1023px) {
@@ -617,8 +619,9 @@ body {
 .status-text {
   font-weight: 700;
   font-size: clamp(0.85rem, 2.2dvh, 1.05rem);
-  height: clamp(1.35rem, 3dvh, 1.6rem);
-  line-height: 1.1;
+  min-height: clamp(1.35rem, 3dvh, 1.6rem); 
+  line-height: 1.15;
+  padding-bottom: 0.25rem;
 }
 .status-dot {
   width: 7px;
@@ -629,6 +632,7 @@ body {
   box-shadow: 0 0 6px currentColor;
   margin-right: 0.4rem;
   flex-shrink: 0;
+  margin-top: 0.4em; 
 }
 
 .mobile-sheet-handle:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
@@ -788,6 +792,10 @@ body {
   border-radius: 8px;
 }
 
+.content > aside::-webkit-scrollbar-track {
+  margin: 8px 0; 
+}
+
 .content > aside::-webkit-scrollbar-thumb,
 #historyList::-webkit-scrollbar-thumb,
 .drawer-body::-webkit-scrollbar-thumb {
@@ -909,7 +917,7 @@ body {
           <span class="eyebrow">Status</span>
           <span id="moveCount" class="mono text-xs" style="color:var(--chalk-dim)"></span>
         </div>
-        <p id="statusMessage" class="status-text flex items-center status-pending">Loading AI Engine...</p>
+        <p id="statusMessage" class="status-text flex items-start status-pending">Loading AI Engine...</p>
         <p id="statusHint" class="status-hint hidden"></p>
 
         <div id="rosterRow" class="mono text-xs mb-1" style="display:none; color:var(--chalk-dim)"></div>
@@ -948,7 +956,7 @@ body {
         </div>
       </div>
 
-      <div class="tray-panel flex-col min-h-0" id="historyPanel" style="display:none; flex: 1 1 0%;">
+      <div class="tray-panel flex-col" id="historyPanel" style="display:none; flex: 1 1 180px; min-height: 180px; overflow: hidden;">
         <div class="flex items-center justify-between mb-2 flex-shrink-0">
           <span class="eyebrow" style="margin:0;">Move History</span>
           <div class="flex gap-1.5">
@@ -963,7 +971,7 @@ body {
             </button>
           </div>
         </div>
-        <div id="historyList" class="flex-1 overflow-y-auto space-y-1.5 pr-1 pb-1">
+        <div id="historyList" class="flex-1 overflow-y-auto min-h-0 space-y-1.5 pr-2 pb-1">
         </div>
       </div>
 
@@ -1063,7 +1071,8 @@ const difficultySimulations = {
   medium: 200,
   hard: 800
 };
-let currentDifficulty = localStorage.getItem('zc_difficulty') || 'medium';
+// Default changed to 'easy'
+let currentDifficulty = localStorage.getItem('zc_difficulty') || 'easy';
 
 const themes = {
   chalkWood: {
@@ -1351,6 +1360,33 @@ window.addEventListener('keydown', (e) => {
 
 let mobileSheetCollapsed = false;
 
+function isSheetLayoutActive() {
+  const isNarrow = window.matchMedia('(max-width: 1023px)').matches;
+  const isShortLandscape = window.matchMedia('(orientation: landscape) and (max-height: 600px)').matches;
+  return isNarrow && !isShortLandscape;
+}
+
+const SHEET_COLLAPSED_COVER_PX = 48; 
+
+function computeTargetCover() {
+  if (!isSheetLayoutActive()) return 0;
+  if (mobileSheetCollapsed) return SHEET_COLLAPSED_COVER_PX;
+  const asideElem = document.querySelector('.content > aside');
+  return asideElem ? asideElem.offsetHeight : SHEET_COLLAPSED_COVER_PX;
+}
+
+function applyBoardCover() {
+  document.documentElement.style.setProperty('--board-cover', computeTargetCover() + 'px');
+}
+
+function updateBoardOffset() {
+  applyBoardCover();
+}
+
+function syncBoardForSheetTransition() {
+  applyBoardCover();
+}
+
 function setMobileSheetCollapsed(collapsed, opts = {}) {
   mobileSheetCollapsed = collapsed;
   const asideElem = document.querySelector('.content > aside');
@@ -1365,6 +1401,7 @@ function setMobileSheetCollapsed(collapsed, opts = {}) {
       setTimeout(() => handle.classList.remove('hint-bounce'), 1200);
     }
   }
+  syncBoardForSheetTransition();
 }
 
 function toggleMobileSheet() {
@@ -1372,8 +1409,37 @@ function toggleMobileSheet() {
   SoundFX.click();
 }
 
+function initBoardOffsetTracking() {
+  const recalc = () => {
+    document.body.style.display = 'none';
+    document.body.offsetHeight; 
+    document.body.style.display = '';
+    updateBoardOffset();
+  };
+
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(recalc);
+  }
+
+  if ('ResizeObserver' in window) {
+    const ro = new ResizeObserver(() => updateBoardOffset());
+    ro.observe(document.body);
+  }
+
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(updateBoardOffset, 100);
+  });
+
+  window.addEventListener('orientationchange', () => {
+    setTimeout(recalc, 100);
+    setTimeout(recalc, 400);
+  });
+}
+
 function getSimulations() {
-  return difficultySimulations[currentDifficulty] || 200;
+  return difficultySimulations[currentDifficulty] || 50;
 }
 
 function selectDifficulty(diff) {
@@ -1482,8 +1548,8 @@ function stampMarkup(status, macroIdx) {
   </svg>`;
 }
 
-function enableControls() {
-  updateStatus('Ready — pick a side or mode.', 'good');
+function enableControls(msg = 'Ready — pick a side or mode.', kind = 'good') {
+  updateStatus(msg, kind);
   document.getElementById('sideSelectContainer').classList.remove('opacity-40', 'pointer-events-none');
 }
 
@@ -1727,7 +1793,7 @@ function startGame(selectedSymbol) {
 
   document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
   document.getElementById('evalContainer').style.opacity = '1';
-  updateActiveModelNote(engineMode === 'wasm' ? 'best_model.onnx (Web Worker)' : 'local heuristic (fallback)');
+  updateActiveModelNote(engineMode === 'wasm' ? 'best_model.onnx (Web Worker)' : 'Basic AI (Offline/Fallback)');
   
   updateRoster();
   SoundFX.click();
@@ -1778,7 +1844,13 @@ function resetGame() {
   resetGameState();
   updateBoardUI();
   updateEvalBar(0);
-  if (engineReady) enableControls();
+  if (engineReady) {
+    if (engineMode === 'fallback') {
+      enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
+    } else {
+      enableControls();
+    }
+  }
   document.getElementById('rosterRow').style.display = 'none';
   document.getElementById('statsRow').style.display = 'none';
   setMobileSheetCollapsed(false);
@@ -2126,9 +2198,8 @@ function makeMove(idx, player, candidates = null) {
     activeGrid = micro;
   }
 
-  if (player !== 0) {
-    currentTurn = -player;
-  }
+  // Strictly flip the turn exactly ONCE per move
+  currentTurn = -player;
 
   renderInsights(candidates);
   pushState(idx, player, candidates);
@@ -2245,7 +2316,7 @@ function updateStatus(msg, kind = 'default') {
   dot.setAttribute('aria-hidden', 'true');
   el.appendChild(dot);
   el.appendChild(document.createTextNode(msg));
-  el.className = 'status-text flex items-center status-' + kind;
+  el.className = 'status-text flex items-start status-' + kind;
 
   const handleText = document.getElementById('mobileHandleText');
   if (handleText) {
@@ -2308,7 +2379,7 @@ async function initEngine() {
 
     setTimeout(() => {
       if (!engineReady) fallbackInit('engine init timed out');
-    }, 6000);
+    }, 10000);
 
   } catch (e) {
     fallbackInit(e);
@@ -2319,8 +2390,8 @@ function fallbackInit(e) {
   console.warn('Full engine unavailable, using local fallback AI instead:', e);
   engineMode = 'fallback';
   engineReady = true;
-  updateActiveModelNote('local heuristic (fallback)');
-  enableControls();
+  updateActiveModelNote('Basic AI (Offline/Fallback)');
+  enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
 }
 
 function revealApp() {
@@ -2361,8 +2432,6 @@ window.onload = () => {
 
   scheduleReveal();
 };
-
-updateBoardOffset();
 </script>
 </body>
 </html>
