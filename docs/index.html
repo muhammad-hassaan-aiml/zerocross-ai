@@ -170,7 +170,10 @@ body {
     align-self: stretch; 
     height: 100%;
     max-height: 100%;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 1rem;
+    padding-right: 8px;
   }
 }
 
@@ -187,7 +190,6 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding-right: 4px; 
 }
 
 @media (max-width: 1023px) {
@@ -617,8 +619,9 @@ body {
 .status-text {
   font-weight: 700;
   font-size: clamp(0.85rem, 2.2dvh, 1.05rem);
-  height: clamp(1.35rem, 3dvh, 1.6rem);
-  line-height: 1.1;
+  min-height: clamp(1.35rem, 3dvh, 1.6rem); 
+  line-height: 1.15;
+  padding-bottom: 0.25rem;
 }
 .status-dot {
   width: 7px;
@@ -629,6 +632,7 @@ body {
   box-shadow: 0 0 6px currentColor;
   margin-right: 0.4rem;
   flex-shrink: 0;
+  margin-top: 0.4em; 
 }
 
 .mobile-sheet-handle:focus-visible { outline: 2px solid var(--chalk-yellow); outline-offset: 2px; }
@@ -788,6 +792,10 @@ body {
   border-radius: 8px;
 }
 
+.content > aside::-webkit-scrollbar-track {
+  margin: 8px 0; 
+}
+
 .content > aside::-webkit-scrollbar-thumb,
 #historyList::-webkit-scrollbar-thumb,
 .drawer-body::-webkit-scrollbar-thumb {
@@ -909,7 +917,7 @@ body {
           <span class="eyebrow">Status</span>
           <span id="moveCount" class="mono text-xs" style="color:var(--chalk-dim)"></span>
         </div>
-        <p id="statusMessage" class="status-text flex items-center status-pending">Loading AI Engine...</p>
+        <p id="statusMessage" class="status-text flex items-start status-pending">Loading AI Engine...</p>
         <p id="statusHint" class="status-hint hidden"></p>
 
         <div id="rosterRow" class="mono text-xs mb-1" style="display:none; color:var(--chalk-dim)"></div>
@@ -948,7 +956,7 @@ body {
         </div>
       </div>
 
-      <div class="tray-panel flex-col min-h-0" id="historyPanel" style="display:none; flex: 1 1 0%;">
+      <div class="tray-panel flex-col" id="historyPanel" style="display:none; flex: 1 1 180px; min-height: 180px; overflow: hidden;">
         <div class="flex items-center justify-between mb-2 flex-shrink-0">
           <span class="eyebrow" style="margin:0;">Move History</span>
           <div class="flex gap-1.5">
@@ -963,7 +971,7 @@ body {
             </button>
           </div>
         </div>
-        <div id="historyList" class="flex-1 overflow-y-auto space-y-1.5 pr-1 pb-1">
+        <div id="historyList" class="flex-1 overflow-y-auto min-h-0 space-y-1.5 pr-2 pb-1">
         </div>
       </div>
 
@@ -1046,8 +1054,50 @@ let engineWorker = null;
 let engineReady = false;
 let engineMode = 'wasm'; 
 let aiTimeoutId = null;
+let engineInitTimeoutId = null;
 
-let gameStats = JSON.parse(localStorage.getItem('zc_stats')) || { w: 0, l: 0, d: 0 };
+// Safe localStorage wrapper. Plain unguarded localStorage calls can throw
+// (private browsing/quota limits/storage disabled by policy), and since a couple of
+// reads happen at top-level script execution, an uncaught throw there would abort the
+// entire script before window.onload is even attached — leaving a blank page stuck on
+// the boot splash. Every read/write goes through here so a storage failure degrades
+// gracefully instead of breaking the app.
+const SafeStorage = {
+  get(key, fallback = null) {
+    try {
+      const v = localStorage.getItem(key);
+      return v === null ? fallback : v;
+    } catch (e) {
+      return fallback;
+    }
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+};
+
+function loadGameStats() {
+  const raw = SafeStorage.get('zc_stats', null);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' &&
+          Number.isFinite(parsed.w) && Number.isFinite(parsed.l) && Number.isFinite(parsed.d)) {
+        return { w: parsed.w, l: parsed.l, d: parsed.d };
+      }
+    } catch (e) {
+      // corrupted JSON — fall through to defaults
+    }
+  }
+  return { w: 0, l: 0, d: 0 };
+}
+
+let gameStats = loadGameStats();
 
 let cellElems = new Array(81);
 let macroElems = new Array(9);
@@ -1063,7 +1113,9 @@ const difficultySimulations = {
   medium: 200,
   hard: 800
 };
-let currentDifficulty = localStorage.getItem('zc_difficulty') || 'medium';
+// Default changed to 'easy'
+let currentDifficulty = SafeStorage.get('zc_difficulty', 'easy');
+if (!difficultySimulations[currentDifficulty]) currentDifficulty = 'easy';
 
 const themes = {
   chalkWood: {
@@ -1171,7 +1223,7 @@ const SoundFX = (() => {
   let ctx = null;
   let masterGain = null;
   let limiter = null;
-  let enabled = localStorage.getItem('zc_sound') !== 'off';
+  let enabled = SafeStorage.get('zc_sound') !== 'off';
   const BOOST = 1.5; 
 
   function ensureCtx() {
@@ -1236,7 +1288,7 @@ const SoundFX = (() => {
 
   return {
     isEnabled: () => enabled,
-    setEnabled(v) { enabled = v; localStorage.setItem('zc_sound', v ? 'on' : 'off'); },
+    setEnabled(v) { enabled = v; SafeStorage.set('zc_sound', v ? 'on' : 'off'); },
     unlock() { ensureCtx(); },
     click()      { tone({ freq: 720, duration: 0.05, type: 'square', gain: 0.13 }); },
     moveHuman()  { tone({ freq: 520, duration: 0.09, type: 'sine', gain: 0.4 }); tone({ freq: 780, duration: 0.05, type: 'sine', gain: 0.17, delay: 0.02 }); },
@@ -1270,8 +1322,8 @@ function syncSoundUI() {
   document.getElementById('soundToggleRow').setAttribute('aria-pressed', String(on));
 }
 
-let activeThemeKey = localStorage.getItem('zc_theme') && themes[localStorage.getItem('zc_theme')]
-  ? localStorage.getItem('zc_theme')
+let activeThemeKey = (SafeStorage.get('zc_theme') && themes[SafeStorage.get('zc_theme')])
+  ? SafeStorage.get('zc_theme')
   : 'chalkWood';
 
 function applyThemeVariables(vars) {
@@ -1292,7 +1344,7 @@ function revertPreview() { applyThemeVariables(themes[activeThemeKey].vars); }
 function selectTheme(key) {
   if (!themes[key]) return;
   activeThemeKey = key;
-  localStorage.setItem('zc_theme', key);
+  SafeStorage.set('zc_theme', key);
   applyThemeVariables(themes[key].vars);
   applyThemeColorMeta(themes[key].vars);
   updateThemeGridSelection();
@@ -1351,6 +1403,33 @@ window.addEventListener('keydown', (e) => {
 
 let mobileSheetCollapsed = false;
 
+function isSheetLayoutActive() {
+  const isNarrow = window.matchMedia('(max-width: 1023px)').matches;
+  const isShortLandscape = window.matchMedia('(orientation: landscape) and (max-height: 600px)').matches;
+  return isNarrow && !isShortLandscape;
+}
+
+const SHEET_COLLAPSED_COVER_PX = 48; 
+
+function computeTargetCover() {
+  if (!isSheetLayoutActive()) return 0;
+  if (mobileSheetCollapsed) return SHEET_COLLAPSED_COVER_PX;
+  const asideElem = document.querySelector('.content > aside');
+  return asideElem ? asideElem.offsetHeight : SHEET_COLLAPSED_COVER_PX;
+}
+
+function applyBoardCover() {
+  document.documentElement.style.setProperty('--board-cover', computeTargetCover() + 'px');
+}
+
+function updateBoardOffset() {
+  applyBoardCover();
+}
+
+function syncBoardForSheetTransition() {
+  applyBoardCover();
+}
+
 function setMobileSheetCollapsed(collapsed, opts = {}) {
   mobileSheetCollapsed = collapsed;
   const asideElem = document.querySelector('.content > aside');
@@ -1365,6 +1444,7 @@ function setMobileSheetCollapsed(collapsed, opts = {}) {
       setTimeout(() => handle.classList.remove('hint-bounce'), 1200);
     }
   }
+  syncBoardForSheetTransition();
 }
 
 function toggleMobileSheet() {
@@ -1372,14 +1452,43 @@ function toggleMobileSheet() {
   SoundFX.click();
 }
 
+function initBoardOffsetTracking() {
+  const recalc = () => {
+    document.body.style.display = 'none';
+    document.body.offsetHeight; 
+    document.body.style.display = '';
+    updateBoardOffset();
+  };
+
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(recalc);
+  }
+
+  if ('ResizeObserver' in window) {
+    const ro = new ResizeObserver(() => updateBoardOffset());
+    ro.observe(document.body);
+  }
+
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(updateBoardOffset, 100);
+  });
+
+  window.addEventListener('orientationchange', () => {
+    setTimeout(recalc, 100);
+    setTimeout(recalc, 400);
+  });
+}
+
 function getSimulations() {
-  return difficultySimulations[currentDifficulty] || 200;
+  return difficultySimulations[currentDifficulty] || 50;
 }
 
 function selectDifficulty(diff) {
   if (!difficultySimulations[diff]) return;
   currentDifficulty = diff;
-  localStorage.setItem('zc_difficulty', diff);
+  SafeStorage.set('zc_difficulty', diff);
   SoundFX.click();
 }
 
@@ -1482,8 +1591,8 @@ function stampMarkup(status, macroIdx) {
   </svg>`;
 }
 
-function enableControls() {
-  updateStatus('Ready — pick a side or mode.', 'good');
+function enableControls(msg = 'Ready — pick a side or mode.', kind = 'good') {
+  updateStatus(msg, kind);
   document.getElementById('sideSelectContainer').classList.remove('opacity-40', 'pointer-events-none');
 }
 
@@ -1727,7 +1836,7 @@ function startGame(selectedSymbol) {
 
   document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
   document.getElementById('evalContainer').style.opacity = '1';
-  updateActiveModelNote(engineMode === 'wasm' ? 'best_model.onnx (Web Worker)' : 'local heuristic (fallback)');
+  updateActiveModelNote(engineMode === 'wasm' ? 'best_model.onnx (Web Worker)' : 'Basic AI (Offline/Fallback)');
   
   updateRoster();
   SoundFX.click();
@@ -1778,7 +1887,13 @@ function resetGame() {
   resetGameState();
   updateBoardUI();
   updateEvalBar(0);
-  if (engineReady) enableControls();
+  if (engineReady) {
+    if (engineMode === 'fallback') {
+      enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
+    } else {
+      enableControls();
+    }
+  }
   document.getElementById('rosterRow').style.display = 'none';
   document.getElementById('statsRow').style.display = 'none';
   setMobileSheetCollapsed(false);
@@ -1824,7 +1939,7 @@ function saveStats(result) {
   if (result === 'win') gameStats.w++;
   else if (result === 'loss') gameStats.l++;
   else if (result === 'draw') gameStats.d++;
-  localStorage.setItem('zc_stats', JSON.stringify(gameStats));
+  SafeStorage.set('zc_stats', JSON.stringify(gameStats));
   updateStatsUI();
 }
 
@@ -2126,9 +2241,7 @@ function makeMove(idx, player, candidates = null) {
     activeGrid = micro;
   }
 
-  if (player !== 0) {
-    currentTurn = -player;
-  }
+  currentTurn = -player;
 
   renderInsights(candidates);
   pushState(idx, player, candidates);
@@ -2215,14 +2328,54 @@ function shareRecap() {
     recap += row + '\n';
   }
 
-  navigator.clipboard.writeText(recap).then(() => {
-    const btnText = document.getElementById('shareRecapText');
-    const originalText = btnText.innerHTML;
-    btnText.innerHTML = 'Copied to Clipboard!';
+  copyRecapToClipboard(recap);
+}
+
+// navigator.clipboard is missing entirely in some contexts (insecure origins, older
+// browsers, certain in-app/webview browsers) — calling .writeText on it directly throws
+// synchronously and would silently kill the Share Recap button with no feedback. This
+// checks for the API first and falls back to a legacy copy method, always ending with
+// a visible success/failure message for the user.
+function copyRecapToClipboard(text) {
+  const btnText = document.getElementById('shareRecapText');
+  const originalText = btnText.innerHTML;
+
+  function showResult(success) {
+    btnText.innerHTML = success ? 'Copied to Clipboard!' : 'Copy failed — try again';
     setTimeout(() => { btnText.innerHTML = originalText; }, 2000);
-  }).catch(err => {
-    console.error('Failed to copy', err);
-  });
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      showResult(true);
+    }).catch(err => {
+      console.error('Clipboard API failed, trying fallback copy method', err);
+      showResult(legacyCopyToClipboard(text));
+    });
+  } else {
+    showResult(legacyCopyToClipboard(text));
+  }
+}
+
+function legacyCopyToClipboard(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (err) {
+    console.error('Fallback copy failed', err);
+    return false;
+  }
 }
 
 function updateHint() {
@@ -2245,7 +2398,7 @@ function updateStatus(msg, kind = 'default') {
   dot.setAttribute('aria-hidden', 'true');
   el.appendChild(dot);
   el.appendChild(document.createTextNode(msg));
-  el.className = 'status-text flex items-center status-' + kind;
+  el.className = 'status-text flex items-start status-' + kind;
 
   const handleText = document.getElementById('mobileHandleText');
   if (handleText) {
@@ -2281,6 +2434,10 @@ async function initEngine() {
     
     if (!window.Worker) throw new Error("Web Workers not supported");
 
+    if (engineWorker) {
+        engineWorker.terminate();
+    }
+
     engineWorker = new Worker('worker.js');
 
     engineWorker.onmessage = (e) => {
@@ -2289,7 +2446,12 @@ async function initEngine() {
         engineMode = 'wasm';
         engineReady = true;
         updateActiveModelNote('best_model.onnx (Web Worker)');
-        enableControls();
+        if (!gameActive) {
+            enableControls();
+        } else {
+            const currentActorText = currentTurn === humanInternal ? 'Your move.' : 'Engine is thinking...';
+            updateStatus(isPvP ? (currentTurn === 1 ? "X's turn." : "O's turn.") : currentActorText, 'active');
+        }
       } else if (data.type === 'init_error') {
         fallbackInit(data.error);
       } else if (data.type === 'think_done') {
@@ -2306,9 +2468,10 @@ async function initEngine() {
 
     engineWorker.postMessage({ type: 'init' });
 
-    setTimeout(() => {
-      if (!engineReady) fallbackInit('engine init timed out');
-    }, 6000);
+    clearTimeout(engineInitTimeoutId);
+    engineInitTimeoutId = setTimeout(() => {
+      if (engineMode !== 'wasm') fallbackInit('engine init timed out');
+    }, 10000);
 
   } catch (e) {
     fallbackInit(e);
@@ -2319,9 +2482,21 @@ function fallbackInit(e) {
   console.warn('Full engine unavailable, using local fallback AI instead:', e);
   engineMode = 'fallback';
   engineReady = true;
-  updateActiveModelNote('local heuristic (fallback)');
-  enableControls();
+  updateActiveModelNote('Basic AI (Offline/Fallback)');
+  if (!gameActive) {
+    enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
+  }
 }
+
+// Watch for internet connection to re-try loading the full AI Engine
+window.addEventListener('online', () => {
+  if (engineMode === 'fallback') {
+    if (!gameActive) {
+      updateStatus("Network restored. Retrying Engine download...", "pending");
+    }
+    initEngine();
+  }
+});
 
 function revealApp() {
   const splash = document.getElementById('bootSplash');
@@ -2361,8 +2536,6 @@ window.onload = () => {
 
   scheduleReveal();
 };
-
-updateBoardOffset();
 </script>
 </body>
 </html>
