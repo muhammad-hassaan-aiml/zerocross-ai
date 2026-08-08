@@ -6,7 +6,6 @@
 <meta name="theme-color" content="#1e332a">
 <title>ZeroCross | Ultimate Tic-Tac-Toe Engine</title>
 
-<!-- Boot Splash (critical, dependency-free) -->
 <style>
   #bootSplash {
     position: fixed;
@@ -43,7 +42,6 @@
 </style>
 
 <script>
-  // Safety net for coi-serviceworker.js to prevent mobile browser throttling
   (function () {
     try {
       if (window.crossOriginIsolated) return;
@@ -59,7 +57,6 @@
   })();
 </script>
 
-<!-- Service Worker to unlock WebAssembly Multi-threading -->
 <script src="coi-serviceworker.js"></script>
 
 <meta name="description" content="Play Ultimate Tic-Tac-Toe against ZeroCross, a self-taught AlphaZero-style engine.">
@@ -189,7 +186,7 @@ body {
     margin: 0 auto;
     width: 100%;
     max-width: 640px;
-    max-height: min(78dvh, 580px);
+    max-height: min(85dvh, 650px);
     background: var(--wood-dark);
     border: 1px solid var(--tray-line);
     border-bottom: none;
@@ -550,6 +547,7 @@ body {
 .icon-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
   background: rgba(0, 0, 0, 0.22);
   border: 1px solid var(--tray-line);
@@ -563,9 +561,9 @@ body {
   touch-action: manipulation;
   transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
-.icon-btn:hover { color: var(--chalk); border-color: var(--chalk-dim); background: rgba(0, 0, 0, 0.32); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); }
+.icon-btn:hover:not(:disabled) { color: var(--chalk); border-color: var(--chalk-dim); background: rgba(0, 0, 0, 0.32); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); }
 .icon-btn svg { transition: transform 0.4s ease; flex-shrink: 0; }
-.icon-btn:hover svg { transform: rotate(45deg); }
+.icon-btn:hover:not(:disabled):not(.sound-btn):not(.history-action) svg { transform: rotate(45deg); }
 .icon-btn.sound-btn:hover svg { transform: none; }
 .icon-btn.sound-btn.muted { color: var(--ink-red); }
 
@@ -714,6 +712,46 @@ body {
 }
 .drawer-section + .drawer-section { margin-top: 1rem; }
 
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid transparent;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--chalk-dim);
+  text-align: left;
+}
+.history-item:hover { background: rgba(0, 0, 0, 0.25); border-color: var(--tray-line); color: var(--chalk); }
+.history-item.active-view { background: rgba(232, 209, 122, 0.1); border-color: var(--chalk-yellow); color: var(--chalk); }
+.history-item.history-x span.move-player { color: var(--chalk-pink); font-weight: bold; }
+.history-item.history-o span.move-player { color: var(--chalk-blue); font-weight: bold; }
+
+#historyList {
+  scrollbar-width: thin;
+  scrollbar-color: var(--chalk-dim) transparent;
+}
+#historyList::-webkit-scrollbar {
+  width: 8px;
+}
+#historyList::-webkit-scrollbar-track {
+  background: transparent;
+}
+#historyList::-webkit-scrollbar-thumb {
+  background: var(--chalk-dim);
+  border-radius: 999px;
+  border: 2px solid var(--tray);
+}
+#historyList::-webkit-scrollbar-thumb:hover {
+  background: var(--chalk);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mark path[data-draw] { animation: none !important; stroke-dashoffset: 0 !important; }
   * { transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; }
@@ -850,6 +888,25 @@ body {
         </div>
       </div>
 
+      <div class="tray-panel flex-col min-h-0" id="historyPanel" style="display:none; flex: 1;">
+        <div class="flex items-center justify-between mb-2 flex-shrink-0">
+          <span class="eyebrow" style="margin:0;">Move History</span>
+          <div class="flex gap-1.5">
+            <button id="resumeBtn" onclick="resumeFromHistory()" class="icon-btn history-action hidden" style="padding: 0.25rem 0.5rem; font-size: 0.65rem; color: var(--chalk-yellow); border-color: var(--chalk-yellow);" aria-label="Resume game">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+            <button id="undoBtn" onclick="undoMove()" class="icon-btn history-action" style="padding: 0.25rem 0.5rem; font-size: 0.65rem;" disabled aria-label="Undo move">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+            </button>
+            <button id="redoBtn" onclick="redoMove()" class="icon-btn history-action" style="padding: 0.25rem 0.5rem; font-size: 0.65rem;" disabled aria-label="Redo move">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 4.7"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="historyList" class="flex-1 overflow-y-auto space-y-1.5 pr-1 pb-1">
+        </div>
+      </div>
+
       <button id="mainActionBtn" onclick="resetGame()" class="chalk-btn btn-primary w-full py-2 sm:py-2.5 text-sm flex-shrink-0">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 21v-6h6"/></svg>
         New Game
@@ -926,12 +983,18 @@ let currentGameId = 0;
 let engineWorker = null;
 let engineReady = false;
 let engineMode = 'wasm'; 
+let aiTimeoutId = null;
 
 let gameStats = JSON.parse(localStorage.getItem('zc_stats')) || { w: 0, l: 0, d: 0 };
 
 let cellElems = new Array(81);
 let macroElems = new Array(9);
 let macroOverlayElems = new Array(9);
+
+let moveHistory = [];
+let viewingHistoryIdx = -1;
+let lastEvalValue = 0;
+let isScrubbing = false;
 
 const difficultySimulations = {
   easy: 50,
@@ -1434,6 +1497,169 @@ function createBoard() {
   }
 }
 
+function pushState(moveIdx = -1, player = 0) {
+  moveHistory.push({
+    board: [...board],
+    macroStatus: [...macroStatus],
+    activeGrid: activeGrid,
+    currentTurn: currentTurn,
+    lastMoveIdx: lastMoveIdx,
+    moveCount: moveCount,
+    freeMoveRule: freeMoveRule,
+    gameActive: gameActive,
+    evalValue: lastEvalValue,
+    moveIdx: moveIdx,
+    player: player
+  });
+  viewingHistoryIdx = moveHistory.length - 1;
+  renderHistory();
+}
+
+function restoreState(state) {
+  board = [...state.board];
+  macroStatus = [...state.macroStatus];
+  activeGrid = state.activeGrid;
+  currentTurn = state.currentTurn;
+  lastMoveIdx = state.lastMoveIdx;
+  moveCount = state.moveCount;
+  freeMoveRule = state.freeMoveRule;
+  gameActive = state.gameActive;
+  updateEvalBar(state.evalValue);
+}
+
+function viewHistory(index) {
+  if (index === moveHistory.length - 1 && gameActive && !isPvP && currentTurn === aiInternal && !isScrubbing) return;
+  
+  isScrubbing = (index < moveHistory.length - 1);
+  viewingHistoryIdx = index;
+  restoreState(moveHistory[index]);
+  
+  currentGameId++; 
+  clearTimeout(aiTimeoutId);
+
+  const resumeBtn = document.getElementById('resumeBtn');
+  
+  if (isScrubbing) {
+    updateStatus(`Reviewing move ${index}. Play or resume to branch.`, 'pending');
+    resumeBtn.classList.remove('hidden');
+  } else {
+    resumeBtn.classList.add('hidden');
+    if (!gameActive) {
+      const winner = checkSubGridWin(macroStatus);
+      if (winner === 1) updateStatus(isPvP ? 'X wins the game!' : (humanInternal === 1 ? 'You won this one.' : 'Engine won this one.'), winner === humanInternal ? 'good' : 'bad');
+      else if (winner === -1) updateStatus(isPvP ? 'O wins the game!' : (humanInternal === -1 ? 'You won this one.' : 'Engine won this one.'), winner === humanInternal ? 'good' : 'bad');
+      else updateStatus("Board's full — a draw.", 'default');
+    } else {
+      const nextMark = currentTurn === 1 ? 'X' : 'O';
+      if (isPvP) {
+        updateStatus(`${nextMark}'s turn.`, 'active');
+      } else {
+        updateStatus(currentTurn === humanInternal ? 'Your move.' : 'Engine is thinking...', 'active');
+        if (currentTurn === aiInternal) {
+            aiTimeoutId = setTimeout(triggerAIMove, 450);
+        }
+      }
+    }
+  }
+  
+  document.getElementById('shareRecapBtn').style.display = (!isScrubbing && !gameActive) ? 'block' : 'none';
+  
+  updateBoardUI();
+  renderHistory();
+}
+
+function resumeFromHistory() {
+  if (!isScrubbing) return;
+  
+  currentGameId++; 
+  moveHistory = moveHistory.slice(0, viewingHistoryIdx + 1);
+  isScrubbing = false;
+  gameActive = true;
+  document.getElementById('resumeBtn').classList.add('hidden');
+  
+  if (isPvP) {
+    const nextMark = currentTurn === 1 ? 'X' : 'O';
+    updateStatus(`${nextMark}'s turn.`, 'active');
+  } else {
+    updateStatus(currentTurn === humanInternal ? 'Your move.' : 'Engine is thinking...', 'active');
+    if (currentTurn === aiInternal) {
+      aiTimeoutId = setTimeout(triggerAIMove, 450);
+    }
+  }
+  
+  updateBoardUI();
+  renderHistory();
+  SoundFX.click();
+}
+
+function undoMove() {
+  if (viewingHistoryIdx <= 0) return;
+  viewHistory(viewingHistoryIdx - 1);
+  SoundFX.click();
+}
+
+function redoMove() {
+  if (viewingHistoryIdx >= moveHistory.length - 1) return;
+  viewHistory(viewingHistoryIdx + 1);
+  SoundFX.click();
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  const panel = document.getElementById('historyPanel');
+  
+  if (moveHistory.length <= 1) {
+    panel.style.display = 'none';
+    return;
+  }
+  
+  panel.style.display = 'flex';
+  list.innerHTML = '';
+  
+  for (let i = 1; i < moveHistory.length; i++) {
+    const state = moveHistory[i];
+    const playerMark = state.player === humanInternal ? humanSymbol : aiSymbol;
+    const isX = playerMark === 'X';
+    
+    const macro = Math.floor(state.moveIdx / 9) + 1;
+    const micro = (state.moveIdx % 9) + 1;
+    const moveStr = `Grid ${macro}, Cell ${micro}`;
+    
+    const item = document.createElement('button');
+    item.className = `history-item ${isX ? 'history-x' : 'history-o'} ${i === viewingHistoryIdx ? 'active-view' : ''}`;
+    item.onclick = () => { viewHistory(i); SoundFX.click(); };
+    
+    item.innerHTML = `
+      <span><span class="move-player">${playerMark}</span>. ${moveStr}</span>
+      <span>${i}</span>
+    `;
+    list.appendChild(item);
+  }
+  
+  const activeItem = list.querySelector('.active-view');
+  if (activeItem) {
+      activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } else {
+      list.scrollTop = list.scrollHeight;
+  }
+  
+  const undoBtn = document.getElementById('undoBtn');
+  const redoBtn = document.getElementById('redoBtn');
+  
+  undoBtn.disabled = viewingHistoryIdx <= 0;
+  redoBtn.disabled = viewingHistoryIdx >= moveHistory.length - 1;
+  
+  [undoBtn, redoBtn].forEach(btn => {
+    if (btn.disabled) {
+      btn.style.opacity = '0.5';
+      btn.style.cursor = 'not-allowed';
+    } else {
+      btn.style.opacity = '1';
+      btn.style.cursor = 'pointer';
+    }
+  });
+}
+
 function startGame(selectedSymbol) {
   if (!engineReady) return;
   isPvP = false;
@@ -1454,9 +1680,11 @@ function startGame(selectedSymbol) {
   updateRoster();
   SoundFX.click();
 
+  pushState();
+
   if (currentTurn === aiInternal) {
     updateStatus('Engine won the toss. Thinking...', 'pending');
-    triggerAIMove();
+    aiTimeoutId = setTimeout(triggerAIMove, 50);
   } else {
     updateStatus('You won the toss! Your move.', 'active');
   }
@@ -1485,6 +1713,8 @@ function startPvP() {
   updateRoster();
   SoundFX.click();
 
+  pushState();
+
   const startingMark = currentTurn === 1 ? 'X' : 'O';
   updateStatus(`Coin toss: ${startingMark} starts.`, 'active');
   
@@ -1505,6 +1735,9 @@ function resetGame() {
 
 function resetGameState() {
   currentGameId++; 
+  clearTimeout(aiTimeoutId);
+  isScrubbing = false;
+  document.getElementById('resumeBtn').classList.add('hidden');
   
   board.fill(0);
   macroStatus.fill(0);
@@ -1516,6 +1749,10 @@ function resetGameState() {
   freeMoveRule = false;
   updateMoveCount();
   document.getElementById('shareRecapBtn').style.display = 'none';
+  
+  moveHistory = [];
+  lastEvalValue = 0;
+  document.getElementById('historyPanel').style.display = 'none';
 }
 
 function updateMoveCount() {
@@ -1628,6 +1865,14 @@ async function handleHumanMove(macro, micro) {
   if (board[idx] !== 0 || macroStatus[macro] !== 0) return;
   if (activeGrid !== -1 && activeGrid !== macro) return;
 
+  if (isScrubbing) {
+    currentGameId++;
+    moveHistory = moveHistory.slice(0, viewingHistoryIdx + 1);
+    isScrubbing = false;
+    document.getElementById('resumeBtn').classList.add('hidden');
+    gameActive = true;
+  }
+
   if (!mobileSheetCollapsed) setMobileSheetCollapsed(true, { hint: false });
 
   makeMove(idx, currentTurn);
@@ -1642,7 +1887,7 @@ async function handleHumanMove(macro, micro) {
     currentTurn = aiInternal;
     updateStatus('Engine is thinking...', 'pending');
     updateBoardUI();
-    setTimeout(triggerAIMove, 450);
+    aiTimeoutId = setTimeout(triggerAIMove, 450);
   }
 }
 
@@ -1830,6 +2075,8 @@ function makeMove(idx, player) {
   } else {
     activeGrid = micro;
   }
+
+  pushState(idx, player);
 }
 
 function checkSubGridWin(grid) {
@@ -1851,6 +2098,8 @@ function checkGameOver() {
   const winner = checkSubGridWin(macroStatus);
   if (winner !== 0) {
     gameActive = false;
+    if (moveHistory.length > 0) moveHistory[moveHistory.length - 1].gameActive = false;
+    
     if (isPvP) {
       if (winner === 1) { updateStatus('X wins the game!', 'good'); SoundFX.gameWin(); }
       else if (winner === -1) { updateStatus('O wins the game!', 'good'); SoundFX.gameWin(); }
@@ -1924,7 +2173,7 @@ function shareRecap() {
 function updateHint() {
   const el = document.getElementById('statusHint');
   if (!el) return;
-  if (gameActive && freeMoveRule && (isPvP || currentTurn === humanInternal)) {
+  if (gameActive && freeMoveRule && (isPvP || currentTurn === humanInternal) && !isScrubbing) {
     el.textContent = 'Sent to a finished board — play anywhere open.';
     el.classList.remove('hidden');
   } else {
@@ -1951,6 +2200,7 @@ function updateStatus(msg, kind = 'default') {
 }
 
 function updateEvalBar(val) {
+  lastEvalValue = val; 
   const valElem = document.getElementById('evalValue');
   if (isPvP) {
     valElem.textContent = 'PvP Mode';
