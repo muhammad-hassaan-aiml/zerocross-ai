@@ -36,15 +36,11 @@ self.onmessage = async function(e) {
         if (!isReady) return;
 
         try {
-            // Extract the unique gameId
             const { gameId, board, activeGrid, simulations } = data;
             
             const state = wasmModule.create_state(board, activeGrid);
             const tree = new wasmModule.MCTSTree(state, false);
 
-            // Determine the optimal batch size based on the difficulty.
-            // This prevents MCTS "tunnel vision" by ensuring the tree updates
-            // frequently enough, while still utilizing CPU SIMD speed optimizations.
             let BATCH_SIZE = 8;
             if (simulations >= 800) {
                 BATCH_SIZE = 32;
@@ -68,17 +64,24 @@ self.onmessage = async function(e) {
                 }
             }
 
-            const policyView = wasmModule.get_root_policy(tree, 0.0);
+            // CHANGED: Pass 1.0 to get proportional visit counts instead of 0.0 (one-hot)
+            const policyView = wasmModule.get_root_policy(tree, 1.0);
             const policyArray = new Float32Array(policyView);
 
-            let ai_move = -1;
-            let maxP = -Infinity;
+            // Extract all legal moves and their probabilities
+            let candidates = [];
             for (let i = 0; i < 81; i++) {
-                if (policyArray[i] > maxP) {
-                    maxP = policyArray[i];
-                    ai_move = i;
+                if (policyArray[i] > 0) {
+                    candidates.push({ move: i, prob: policyArray[i] });
                 }
             }
+
+            // Sort descending to find the best moves
+            candidates.sort((a, b) => b.prob - a.prob);
+            
+            // Get the top 3
+            const topCandidates = candidates.slice(0, 3);
+            const ai_move = topCandidates.length > 0 ? topCandidates[0].move : -1;
 
             const rootStateView = wasmModule.encode_state(state);
             const rootTensorData = new Float32Array(rootStateView);
@@ -89,8 +92,14 @@ self.onmessage = async function(e) {
             tree.delete();
             state.delete();
 
-            // Echo the gameId back to the main thread
-            self.postMessage({ type: 'think_done', gameId: gameId, move: ai_move, rootVal: rootVal });
+            // Pass the candidates array back to the UI
+            self.postMessage({ 
+                type: 'think_done', 
+                gameId: gameId, 
+                move: ai_move, 
+                rootVal: rootVal,
+                candidates: topCandidates
+            });
 
         } catch (error) {
             self.postMessage({ type: 'think_error', error: error.message || error });

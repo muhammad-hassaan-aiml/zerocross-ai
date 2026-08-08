@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#1e332a">
 <title>ZeroCross | Ultimate Tic-Tac-Toe Engine</title>
 
+<!-- Boot Splash (critical, dependency-free) -->
 <style>
   #bootSplash {
     position: fixed;
@@ -42,6 +43,7 @@
 </style>
 
 <script>
+  // Safety net for coi-serviceworker.js to prevent mobile browser throttling
   (function () {
     try {
       if (window.crossOriginIsolated) return;
@@ -57,6 +59,7 @@
   })();
 </script>
 
+<!-- Service Worker to unlock WebAssembly Multi-threading -->
 <script src="coi-serviceworker.js"></script>
 
 <meta name="description" content="Play Ultimate Tic-Tac-Toe against ZeroCross, a self-taught AlphaZero-style engine.">
@@ -886,6 +889,16 @@ body {
             <span>X ahead</span><span>even</span><span>O ahead</span>
           </div>
         </div>
+        
+        <div id="insightsContainer" class="space-y-1 mt-3 pt-3 transition-opacity duration-300" style="border-top: 1px solid var(--tray-line); display: none;">
+          <div class="flex justify-between items-end mb-1">
+            <span class="eyebrow">Engine Insights</span>
+            <span class="mono text-xs" style="color:var(--chalk-dim)">Top Candidates</span>
+          </div>
+          <div id="insightsList" class="flex flex-col gap-1">
+            <!-- Populated via JS -->
+          </div>
+        </div>
       </div>
 
       <div class="tray-panel flex-col min-h-0" id="historyPanel" style="display:none; flex: 1;">
@@ -1497,7 +1510,7 @@ function createBoard() {
   }
 }
 
-function pushState(moveIdx = -1, player = 0) {
+function pushState(moveIdx = -1, player = 0, candidates = null) {
   moveHistory.push({
     board: [...board],
     macroStatus: [...macroStatus],
@@ -1509,7 +1522,8 @@ function pushState(moveIdx = -1, player = 0) {
     gameActive: gameActive,
     evalValue: lastEvalValue,
     moveIdx: moveIdx,
-    player: player
+    player: player,
+    candidates: candidates
   });
   viewingHistoryIdx = moveHistory.length - 1;
   renderHistory();
@@ -1525,6 +1539,7 @@ function restoreState(state) {
   freeMoveRule = state.freeMoveRule;
   gameActive = state.gameActive;
   updateEvalBar(state.evalValue);
+  renderInsights(state.candidates);
 }
 
 function viewHistory(index) {
@@ -1660,6 +1675,35 @@ function renderHistory() {
   });
 }
 
+function renderInsights(candidates) {
+  const container = document.getElementById('insightsContainer');
+  const list = document.getElementById('insightsList');
+  
+  if (!candidates || candidates.length === 0 || isPvP) {
+    container.style.display = 'none';
+    return;
+  }
+  
+  container.style.display = 'block';
+  list.innerHTML = '';
+  
+  candidates.forEach((cand, idx) => {
+    const macro = Math.floor(cand.move / 9) + 1;
+    const micro = (cand.move % 9) + 1;
+    const pct = (cand.prob * 100).toFixed(1);
+    
+    const color = idx === 0 ? 'var(--chalk-yellow)' : 'var(--chalk-dim)';
+    
+    const item = document.createElement('div');
+    item.className = 'flex justify-between items-center mono text-xs';
+    item.innerHTML = `
+      <span style="color: ${color}">Grid ${macro}, Cell ${micro}</span>
+      <span style="color: ${color}">${pct}%</span>
+    `;
+    list.appendChild(item);
+  });
+}
+
 function startGame(selectedSymbol) {
   if (!engineReady) return;
   isPvP = false;
@@ -1753,6 +1797,7 @@ function resetGameState() {
   moveHistory = [];
   lastEvalValue = 0;
   document.getElementById('historyPanel').style.display = 'none';
+  document.getElementById('insightsContainer').style.display = 'none';
 }
 
 function updateMoveCount() {
@@ -1850,7 +1895,7 @@ function updateBoardUI() {
           cellElem.innerHTML = '';
           cellElem.dataset.rendered = '';
         }
-        cellElem.disabled = !gameActive || !isMacroActive || (!isPvP && currentTurn !== humanInternal);
+        cellElem.disabled = !gameActive || !isMacroActive || (!isPvP && currentTurn !== humanInternal) || isScrubbing;
       }
       cellElem.className = cellClass;
     }
@@ -1911,7 +1956,7 @@ async function triggerAIMove() {
   }
 }
 
-function handleWorkerMove(ai_move, rootVal, incomingGameId) {
+function handleWorkerMove(ai_move, rootVal, incomingGameId, candidateMoves) {
   if (incomingGameId !== currentGameId) return; 
   if (!gameActive || currentTurn !== aiInternal) return;
   
@@ -1919,7 +1964,8 @@ function handleWorkerMove(ai_move, rootVal, incomingGameId) {
 
   const xValue = rootVal * (aiSymbol === 'X' ? 1 : -1);
   updateEvalBar(xValue);
-  makeMove(ai_move, aiInternal);
+
+  makeMove(ai_move, aiInternal, candidateMoves);
 
   const ai_macro = Math.floor(ai_move / 9);
   const ai_micro = ai_move % 9;
@@ -2047,7 +2093,7 @@ function estimateHeuristicEval() {
   return Math.max(-1, Math.min(1, score / 3));
 }
 
-function makeMove(idx, player) {
+function makeMove(idx, player, candidates = null) {
   board[idx] = player;
   lastMoveIdx = idx;
   moveCount++;
@@ -2076,7 +2122,8 @@ function makeMove(idx, player) {
     activeGrid = micro;
   }
 
-  pushState(idx, player);
+  renderInsights(candidates);
+  pushState(idx, player, candidates);
 }
 
 function checkSubGridWin(grid) {
@@ -2238,7 +2285,7 @@ async function initEngine() {
       } else if (data.type === 'init_error') {
         fallbackInit(data.error);
       } else if (data.type === 'think_done') {
-        handleWorkerMove(data.move, data.rootVal, data.gameId);
+        handleWorkerMove(data.move, data.rootVal, data.gameId, data.candidates);
       } else if (data.type === 'think_error') {
         handleEngineError(data.error);
       }
