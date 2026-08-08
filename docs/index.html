@@ -6,6 +6,92 @@
 <meta name="theme-color" content="#1e332a">
 <title>ZeroCross | Ultimate Tic-Tac-Toe Engine</title>
 
+<!-- ==========================================================
+     BOOT SPLASH (critical, dependency-free)
+     Deliberately placed first, before Tailwind/fonts/anything else,
+     and written with hardcoded colors + a system font stack instead
+     of the site's CSS variables / Google Font / Tailwind classes.
+     Those all load asynchronously, so if this splash depended on
+     them it could itself render half-styled -- defeating the point.
+     This block is guaranteed correct on the very first paint.
+     ========================================================== -->
+<style>
+  #bootSplash {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: #2f2116;
+    color: #eef0e2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    transition: opacity 0.25s ease;
+  }
+  #bootSplash.boot-hidden { opacity: 0; pointer-events: none; }
+  #bootSplash .boot-spinner {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 3px solid rgba(238, 240, 226, 0.22);
+    border-top-color: #e8d17a;
+    animation: boot-spin 0.8s linear infinite;
+  }
+  #bootSplash .boot-label {
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    opacity: 0.85;
+  }
+  @keyframes boot-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    #bootSplash .boot-spinner { animation: none; }
+  }
+</style>
+<script>
+  // --------------------------------------------------------------
+  // Safety net for coi-serviceworker.js.
+  //
+  // coi-serviceworker.js registers a service worker whose whole job is to
+  // add the Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy
+  // response headers this page needs for multi-threaded WASM. Those
+  // headers only apply to requests the service worker actually
+  // intercepts -- and on the very first visit (or after the cache is
+  // cleared), the FIRST load of this page necessarily happens before any
+  // service worker controls it. So coi-serviceworker.js's normal job is
+  // to register itself and then reload the page once, so the *second*
+  // load goes through the now-active worker and picks up the headers.
+  //
+  // That automatic reload is exactly what was showing up as "the page
+  // looks broken the first time, then a manual refresh fixes it": the
+  // reload usually fires on its own, but on some mobile browsers it can
+  // be delayed or dropped (background-tab throttling, slow SW
+  // activation), leaving the pre-isolation, half-set-up page on screen
+  // indefinitely. This does the "manual refresh" automatically instead,
+  // at most once per tab session (guarded via sessionStorage so it can
+  // never loop), if the browser hasn't reached isolation on its own
+  // shortly after load.
+  // --------------------------------------------------------------
+  (function () {
+    try {
+      if (window.crossOriginIsolated) return;
+      if (!('serviceWorker' in navigator)) return;
+      var FLAG = 'zc_coi_boot_reload';
+      if (sessionStorage.getItem(FLAG)) return;
+      setTimeout(function () {
+        if (window.crossOriginIsolated) return;
+        try { sessionStorage.setItem(FLAG, '1'); } catch (e) {}
+        window.location.reload();
+      }, 1500);
+    } catch (e) {
+      // sessionStorage unavailable (private mode, etc.) -- skip the
+      // safety net silently; the game still works without it (falls
+      // back to single-threaded WASM or the local JS engine).
+    }
+  })();
+</script>
+
 <!-- Service Worker to unlock WebAssembly Multi-threading on GitHub Pages -->
 <script src="coi-serviceworker.js"></script>
 
@@ -221,7 +307,34 @@ body {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  transition: padding-bottom 0.32s cubic-bezier(0.22, 0.8, 0.25, 1);
+  /* INTENTIONALLY NOT TRANSITIONED: padding-bottom used to animate here
+     (0.32s), but .board-frame is sized off THIS element's content box via
+     container query units (cqw/cqh, see below) -- and animating a property
+     that changes a container's content box forces the browser to redo
+     layout for the ENTIRE query-container subtree (all 81 cells, since
+     they're sized in cqw/cqh too) on every single animation frame for the
+     whole ~320ms. That full-board layout thrash, repeated on every sheet
+     open/close, was the real source of the lingering "animation lag on
+     phone" -- mobile CPUs can't keep up with ~80+ layout recalcs a frame.
+     It's safe to snap this instantly instead: the sheet itself is
+     position:fixed with a higher z-index and an opaque background (see
+     ".content > aside" below), so it already visually covers/uncovers the
+     board as IT slides via its own (compositor-only) transform, regardless
+     of exactly when the board's box resizes underneath. Nothing is lost
+     visually, and the expensive per-frame reflow is gone. */
+  /* Turns .board-stage into a query container so .board-frame below can
+     size itself directly off .board-stage's REAL, LIVE content box (via
+     the cqw/cqh units), with no JavaScript measurement step at all. This
+     replaces an earlier JS-driven approach (read the stage's box in
+     script, compute the largest fitting square, write it as an explicit
+     pixel width/height) that went through several rounds of increasingly
+     complex patching and was still unreliable — a synchronous read right
+     after changing --board-cover would intermittently see the browser's
+     OLD layout on phones, so the board could snap to the wrong size and
+     stay there with nothing to correct it. Container query units have no
+     such problem: they're resolved by the browser's own layout engine,
+     always current, with nothing to desync. */
+  container-type: size;
 }
 
 .board-frame {
@@ -234,21 +347,15 @@ body {
     0 0 0 1px rgba(255, 255, 255, 0.05) inset,
     0 -30px 50px rgba(0, 0, 0, 0.25) inset;
   transition: background 0.3s ease, box-shadow 0.3s ease;
-  height: 100%;
-  width: auto;
-  max-width: 100%;
-  max-height: 100%;
-  aspect-ratio: 1 / 1;
+  /* The largest square that fits .board-stage's current content box,
+     recomputed live by the browser on every frame that box changes size
+     — including smoothly, automatically, for free, while the
+     padding-bottom transition above is running, since cqw/cqh always
+     reflect the container's size AT THAT INSTANT. No JS ever sets width
+     or height on this element. */
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
 }
-
-/* NOTE: .board-frame's width/height are deliberately NOT transitioned.
-   Animating width/height directly forces the browser to re-layout the
-   entire 81-cell board subtree on every single animation frame — real,
-   unavoidable cost regardless of whether the change comes from JS or CSS.
-   Instead, syncBoardForSheetTransition() in the script snaps width/height
-   to their final value instantly (one cheap layout pass) and fakes the
-   smooth "grow/shrink" with a transform:scale() animation applied inline,
-   which runs entirely on the compositor and never touches layout. */
 
 .board-grid {
   position: relative;
@@ -719,6 +826,11 @@ body {
 </head>
 <body class="selection:bg-amber-500/30">
 
+<div id="bootSplash" aria-hidden="true">
+  <div class="boot-spinner"></div>
+  <div class="boot-label">Loading ZeroCross…</div>
+</div>
+
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <filter id="chalk-rough" x="-30%" y="-30%" width="160%" height="160%">
@@ -1153,139 +1265,55 @@ function isSheetLayoutActive() {
   return isNarrow && !isShortLandscape;
 }
 
-// Perf: cheap half of the old updateBoardOffset() — a single read
-// (aside's bounding rect) plus a single write (the --board-cover custom
-// property). Split out from the expensive board-resizing half below so the
-// per-frame transition loop can run this every frame (needed for the
-// covered-height CSS transition to track the sliding sheet smoothly)
-// without also paying for a full board layout/resize every frame.
-function updateCoverOnly() {
-  if (!isSheetLayoutActive()) {
-    document.documentElement.style.setProperty('--board-cover', '0px');
-    return;
-  }
+// How much of the screen the sheet currently blocks is derived ONLY from
+// whether it's meant to be collapsed or expanded (`mobileSheetCollapsed`)
+// — never by reading the sheet's live on-screen position. Collapsed always
+// leaves exactly 52px of the handle visible (matches
+// translateY(calc(100% - 52px)) in the CSS); expanded always covers
+// exactly the panel's own natural height, which `offsetHeight` reports
+// correctly regardless of the slide (transform never changes layout size).
+const SHEET_COLLAPSED_COVER_PX = 52; // matches translateY(calc(100% - 52px)) in CSS
+
+function computeTargetCover() {
+  if (!isSheetLayoutActive()) return 0;
+  if (mobileSheetCollapsed) return SHEET_COLLAPSED_COVER_PX;
   const asideElem = document.querySelector('.content > aside');
-  if (!asideElem) return;
-  const rect = asideElem.getBoundingClientRect();
-  const covered = Math.max(0, Math.round(window.innerHeight - rect.top));
-  document.documentElement.style.setProperty('--board-cover', covered + 'px');
+  return asideElem ? asideElem.offsetHeight : SHEET_COLLAPSED_COVER_PX;
+}
+
+// This is now the ONLY thing JS does to size the board. .board-frame
+// sizes itself from .board-stage's live content box via CSS container
+// query units (see the .board-stage / .board-frame rules in <style>), so
+// there's no measuring, no explicit width/height to compute or write, and
+// no animation to hand-drive — the browser keeps the board's size correct
+// on every frame, automatically, for as long as the page exists. All JS
+// needs to do is tell CSS how much space the sheet is currently blocking.
+//
+// Earlier versions of this function (and the sizeBoardFrame() /
+// syncBoardForSheetTransition() FLIP-animation machinery it replaces)
+// tried to solve this in JS: measure .board-stage's box, compute the
+// largest fitting square, write it as an explicit pixel size, and
+// hand-animate the transition. That went through several rounds of
+// increasingly complex patching (a requestAnimationFrame polling loop,
+// then a native width/height transition, then a transform-based FLIP
+// trick, then deferring the measurement by a frame) and was STILL
+// unreliable — a JS read of the stage's layout could intermittently see
+// stale geometry on phones, especially right after other DOM changes
+// (like the roster row appearing), leaving the board stuck at the wrong
+// size with nothing to correct it. Container queries don't have a "read
+// at the wrong time" failure mode, because there's no read: the browser
+// itself keeps .board-frame's size in sync with .board-stage continuously,
+// the same way it already does for any other CSS-only layout.
+function applyBoardCover() {
+  document.documentElement.style.setProperty('--board-cover', computeTargetCover() + 'px');
 }
 
 function updateBoardOffset() {
-  updateCoverOnly();
-  sizeBoardFrame();
+  applyBoardCover();
 }
 
-// --------------------------------------------------------
-// Compute the largest square that actually fits inside the
-// visible .board-stage box (after padding / the bottom-sheet
-// cover is applied) and size .board-frame to it directly, in
-// real pixels.
-//
-// Why this is needed: the old CSS-only approach (height:100% +
-// width:auto + aspect-ratio:1/1 on .board-frame) asks the browser
-// to derive width from a height that's already fixed. Browsers
-// don't agree on how to reconcile that with max-width once the
-// container is taller than it is wide — which is exactly a phone
-// in portrait mode — so the frame could render wider than the
-// screen and get clipped on the right edge. Measuring the real
-// box in JS and setting an explicit pixel width/height removes
-// that ambiguity entirely: the board can never be bigger than the
-// space it's actually been given.
-// --------------------------------------------------------
-function sizeBoardFrame() {
-  const stage = document.querySelector('.board-stage');
-  const frame = document.querySelector('.board-frame');
-  if (!stage || !frame) return null;
-
-  const rect = stage.getBoundingClientRect();
-  const cs = getComputedStyle(stage);
-  const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
-  const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-
-  const availW = Math.max(0, rect.width - padX);
-  const availH = Math.max(0, rect.height - padY);
-  const size = Math.floor(Math.min(availW, availH));
-
-  if (size > 0) {
-    frame.style.width = size + 'px';
-    frame.style.height = size + 'px';
-    return size;
-  }
-  return null;
-}
-
-// --------------------------------------------------------
-// Sheet-toggle sync.
-//
-// Perf history, round 1: this used to run a requestAnimationFrame loop
-// for the full ~400ms of the sheet's slide, calling getBoundingClientRect()
-// + a style write on (up to) every frame. That read-then-write pattern is
-// classic layout thrashing — each read forces the browser to flush any
-// pending layout synchronously, fighting the sheet's own (otherwise
-// compositor-only, cheap) transform animation.
-//
-// Perf history, round 2: replacing the loop with a single measurement
-// plus a native CSS transition on width/height removed the thrashing, but
-// width/height are themselves layout-affecting properties — animating
-// them, even smoothly via CSS, still forces the browser to re-layout the
-// entire 81-cell board subtree on every rendered frame for the whole
-// transition. On slower phones that's still enough work per frame to be
-// felt as residual jank.
-//
-// Fix: separate "what size is the board" from "what size does it LOOK
-// like right now". We snap width/height to their final target in one
-// shot (one unavoidable, one-time layout pass — see sizeBoardFrame),
-// then immediately apply an inline transform:scale() that makes the
-// frame visually appear at its OLD size, and transition that scale back
-// to 1. Transform never triggers layout, so the entire visual animation
-// after that first snap runs on the compositor only — the 81 cells are
-// laid out exactly once per toggle, not once per frame.
-// --------------------------------------------------------
-const SHEET_TRANSITION_MS = 320;
-const SHEET_COLLAPSED_COVER_PX = 52; // matches translateY(calc(100% - 52px)) in CSS
-
-function syncBoardForSheetTransition(collapsing) {
-  const frame = document.querySelector('.board-frame');
-
-  if (!isSheetLayoutActive()) {
-    document.documentElement.style.setProperty('--board-cover', '0px');
-    sizeBoardFrame();
-    return;
-  }
-
-  const asideElem = document.querySelector('.content > aside');
-  const targetCover = collapsing
-    ? SHEET_COLLAPSED_COVER_PX
-    : (asideElem ? asideElem.offsetHeight : SHEET_COLLAPSED_COVER_PX);
-
-  // Read the frame's CURRENT on-screen size before changing anything —
-  // this is the "First" step of the FLIP technique, and it's cheap here
-  // because nothing is dirty yet (no pending style writes to flush).
-  const oldSize = frame ? frame.getBoundingClientRect().width : 0;
-
-  document.documentElement.style.setProperty('--board-cover', targetCover + 'px');
-  const newSize = sizeBoardFrame(); // "Last": snaps to the real final size (one forced layout)
-
-  if (frame && oldSize > 0 && newSize) {
-    const scale = oldSize / newSize;
-    if (Math.abs(scale - 1) > 0.01) {
-      // "Invert": jump the frame back to looking like its old size...
-      frame.style.willChange = 'transform';
-      frame.style.transition = 'none';
-      frame.style.transform = `scale(${scale})`;
-      void frame.offsetWidth; // flush, so the next write is treated as a fresh change to animate
-      // ...then "Play": transition the scale to 1, i.e. its real new size.
-      frame.style.transition = `background 0.3s ease, box-shadow 0.3s ease, transform ${SHEET_TRANSITION_MS}ms cubic-bezier(0.22, 0.8, 0.25, 1)`;
-      frame.style.transform = 'scale(1)';
-      clearTimeout(frame._scaleCleanupTimer);
-      frame._scaleCleanupTimer = setTimeout(() => {
-        frame.style.transition = '';
-        frame.style.transform = '';
-        frame.style.willChange = '';
-      }, SHEET_TRANSITION_MS + 60);
-    }
-  }
+function syncBoardForSheetTransition() {
+  applyBoardCover();
 }
 
 function setMobileSheetCollapsed(collapsed, opts = {}) {
@@ -1305,7 +1333,7 @@ function setMobileSheetCollapsed(collapsed, opts = {}) {
       setTimeout(() => handle.classList.remove('hint-bounce'), 1200);
     }
   }
-  syncBoardForSheetTransition(collapsed);
+  syncBoardForSheetTransition();
 }
 
 function toggleMobileSheet() {
@@ -1317,17 +1345,14 @@ function initBoardOffsetTracking() {
   updateBoardOffset();
 
   const asideElem = document.querySelector('.content > aside');
-  const stageElem = document.querySelector('.board-stage');
 
-  if ('ResizeObserver' in window) {
-    if (asideElem) {
-      const ro = new ResizeObserver(() => updateBoardOffset());
-      ro.observe(asideElem);
-    }
-    if (stageElem) {
-      const roStage = new ResizeObserver(() => sizeBoardFrame());
-      roStage.observe(stageElem);
-    }
+  if ('ResizeObserver' in window && asideElem) {
+    // border-box (not the default content-box) so this only fires on the
+    // panel's real on-page footprint changing -- e.g. the roster row
+    // appearing after you pick a side -- and not on incidental content-box
+    // shifts that don't actually change how much room the panel needs.
+    const ro = new ResizeObserver(() => updateBoardOffset());
+    ro.observe(asideElem, { box: 'border-box' });
   }
 
   let resizeTimer = null;
@@ -1352,6 +1377,14 @@ function initBoardOffsetTracking() {
 
   setTimeout(updateBoardOffset, 150);
   setTimeout(updateBoardOffset, 500);
+
+  // Kalam/JetBrains Mono are loaded async via @import; if they finish
+  // swapping in after the timers above already ran, the panel's text
+  // (and therefore its offsetHeight) can reflow one more time. Re-measure
+  // once fonts are actually ready so --board-cover doesn't stay stale.
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(updateBoardOffset);
+  }
 }
 
 function getSimulations() {
@@ -1986,6 +2019,39 @@ function fallbackInit(e) {
   enableControls();
 }
 
+// --------------------------------------------------------
+// Boot splash reveal
+// --------------------------------------------------------
+function revealApp() {
+  const splash = document.getElementById('bootSplash');
+  if (!splash || splash.classList.contains('boot-hidden')) return;
+  splash.classList.add('boot-hidden');
+  setTimeout(() => splash.remove(), 300);
+}
+
+function scheduleReveal() {
+  // Already isolated, or service workers aren't a factor at all (so no
+  // coi-serviceworker reload is coming either way): safe to reveal now
+  // that the board/engine bootstrap above has run.
+  if (window.crossOriginIsolated || !('serviceWorker' in navigator)) {
+    revealApp();
+    return;
+  }
+  // A service worker already controls this load (e.g. a normal repeat
+  // visit) -- no *fresh-registration* reload is pending.
+  if (navigator.serviceWorker.controller) {
+    revealApp();
+    return;
+  }
+  // Otherwise a coi-serviceworker-triggered reload could still land at
+  // any moment (see the boot-reload safety net in <head>). Keep the
+  // splash up -- masking whatever the reload interrupts -- until either
+  // isolation is reached or a short grace period passes with nothing
+  // happening, so the game is never stuck behind the splash forever.
+  navigator.serviceWorker.addEventListener('controllerchange', revealApp, { once: true });
+  setTimeout(revealApp, 1800);
+}
+
 window.onload = () => {
   // Engine bootstrap and board rendering go first, unconditionally — these
   // are the two things that actually make the game playable. Everything
@@ -2005,6 +2071,8 @@ window.onload = () => {
   } catch (err) {
     console.error('Non-critical UI setup failed (game is still playable):', err);
   }
+
+  scheduleReveal();
 };
 
 // The script runs after the DOM (but not necessarily fonts/CDN scripts)
