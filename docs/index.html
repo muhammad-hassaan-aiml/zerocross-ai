@@ -897,13 +897,22 @@ body {
           <svg class="handle-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
         </span>
       </button>
+      
       <div class="tray-panel" id="controlPanel">
-        <span class="eyebrow block mb-1.5 sm:mb-2 lg:mb-3">Choose Your Side</span>
-        <div class="grid grid-cols-2 gap-2 transition-opacity duration-300 opacity-40 pointer-events-none" id="sideSelectContainer">
-          <button onclick="startGame('X')" class="chalk-btn side-btn side-btn-x">Play X</button>
-          <button onclick="startGame('O')" class="chalk-btn side-btn side-btn-o">Play O</button>
+        <div id="sideSelectContainer" class="transition-opacity duration-300 opacity-40 pointer-events-none flex flex-col gap-3">
+          <div>
+            <span class="eyebrow block mb-1.5 sm:mb-2">Play vs Engine</span>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="startGame('X')" class="chalk-btn side-btn side-btn-x">Play X</button>
+              <button onclick="startGame('O')" class="chalk-btn side-btn side-btn-o">Play O</button>
+            </div>
+          </div>
+          <div>
+            <span class="eyebrow block mb-1.5 sm:mb-2">Local Multiplayer</span>
+            <button onclick="startPvP()" class="chalk-btn side-btn side-btn-y w-full">Pass &amp; Play</button>
+          </div>
         </div>
-        <p class="eyebrow mt-1.5 lg:mt-2 hidden sm:block" style="text-transform:none; letter-spacing:0;">Coin toss decides who opens the board.</p>
+        <p class="eyebrow mt-3 hidden sm:block" style="text-transform:none; letter-spacing:0;">Coin toss decides who opens the board.</p>
         
         <div class="active-model-note">
           <span class="flex-shrink-0">Engine:</span>
@@ -919,12 +928,9 @@ body {
         <p id="statusMessage" class="status-text flex items-center status-pending">Loading AI Engine...</p>
         <p id="statusHint" class="status-hint hidden"></p>
 
-        <div id="rosterRow" class="mono text-xs mb-2 lg:mb-4" style="display:none; color:var(--chalk-dim)">
-          You <span id="rosterYouMark" class="mark-chip chip-x">X</span>
-          &nbsp;·&nbsp; Engine <span id="rosterAiMark" class="mark-chip chip-o">O</span>
-        </div>
+        <div id="rosterRow" class="mono text-xs mb-2 lg:mb-4" style="display:none; color:var(--chalk-dim)"></div>
 
-        <div class="space-y-1 sm:space-y-1.5 mt-2 lg:mt-4">
+        <div id="evalContainer" class="space-y-1 sm:space-y-1.5 mt-2 lg:mt-4 transition-opacity duration-300">
           <div class="flex justify-between items-end">
             <span class="eyebrow">Position Read</span>
             <span id="evalValue" class="mono text-xs font-bold" style="color:var(--chalk)">0.00</span>
@@ -999,6 +1005,7 @@ let humanSymbol = 'X';
 let aiSymbol = 'O';
 let currentTurn = 1;
 let gameActive = false;
+let isPvP = false;
 let lastMoveIdx = -1;
 let moveCount = 0;
 let freeMoveRule = false;
@@ -1176,15 +1183,15 @@ const SoundFX = (() => {
     isEnabled: () => enabled,
     setEnabled(v) { enabled = v; localStorage.setItem('zc_sound', v ? 'on' : 'off'); },
     unlock() { ensureCtx(); },
-    click()      { tone({ freq: 720, duration: 0.05, type: 'square', gain: 0.045 }); },
-    moveHuman()  { tone({ freq: 520, duration: 0.09, type: 'sine', gain: 0.16 }); tone({ freq: 780, duration: 0.05, type: 'sine', gain: 0.06, delay: 0.02 }); },
-    moveAI()     { tone({ freq: 300, duration: 0.12, type: 'triangle', gain: 0.16 }); },
-    microWin()   { tone({ freq: 200, duration: 0.18, type: 'sawtooth', gain: 0.1 }); noiseBurst({ duration: 0.12, gain: 0.07, filterFreq: 900 }); },
-    gameWin()    { [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone({ freq: f, duration: 0.32, type: 'triangle', gain: 0.14, delay: i * 0.09 })); },
-    gameLose()   { [400, 340, 260, 180].forEach((f, i) => tone({ freq: f, duration: 0.28, type: 'sawtooth', gain: 0.12, delay: i * 0.1 })); },
-    gameDraw()   { tone({ freq: 340, duration: 0.22, type: 'sine', gain: 0.12 }); tone({ freq: 340, duration: 0.22, type: 'sine', gain: 0.1, delay: 0.16 }); },
-    drawerOpen() { tone({ freq: 480, duration: 0.09, type: 'sine', gain: 0.05, glideTo: 720 }); },
-    drawerClose(){ tone({ freq: 720, duration: 0.09, type: 'sine', gain: 0.05, glideTo: 460 }); }
+    click()      { tone({ freq: 720, duration: 0.05, type: 'square', gain: 0.09 }); },
+    moveHuman()  { tone({ freq: 520, duration: 0.09, type: 'sine', gain: 0.3 }); tone({ freq: 780, duration: 0.05, type: 'sine', gain: 0.12, delay: 0.02 }); },
+    moveAI()     { tone({ freq: 300, duration: 0.12, type: 'triangle', gain: 0.3 }); },
+    microWin()   { tone({ freq: 200, duration: 0.18, type: 'sawtooth', gain: 0.2 }); noiseBurst({ duration: 0.12, gain: 0.14, filterFreq: 900 }); },
+    gameWin()    { [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone({ freq: f, duration: 0.32, type: 'triangle', gain: 0.25, delay: i * 0.09 })); },
+    gameLose()   { [400, 340, 260, 180].forEach((f, i) => tone({ freq: f, duration: 0.28, type: 'sawtooth', gain: 0.2, delay: i * 0.1 })); },
+    gameDraw()   { tone({ freq: 340, duration: 0.22, type: 'sine', gain: 0.2 }); tone({ freq: 340, duration: 0.22, type: 'sine', gain: 0.2, delay: 0.16 }); },
+    drawerOpen() { tone({ freq: 480, duration: 0.09, type: 'sine', gain: 0.1, glideTo: 720 }); },
+    drawerClose(){ tone({ freq: 720, duration: 0.09, type: 'sine', gain: 0.1, glideTo: 460 }); }
   };
 })();
 
@@ -1553,7 +1560,7 @@ function stampMarkup(status, macroIdx) {
 }
 
 function enableControls() {
-  updateStatus('Ready — pick a side.', 'good');
+  updateStatus('Ready — pick a mode.', 'good');
   document.getElementById('sideSelectContainer').classList.remove('opacity-40', 'pointer-events-none');
 }
 
@@ -1590,6 +1597,7 @@ function createBoard() {
 
 function startGame(selectedSymbol) {
   if (!engineReady) return;
+  isPvP = false;
   humanSymbol = selectedSymbol;
   aiSymbol = selectedSymbol === 'X' ? 'O' : 'X';
 
@@ -1601,6 +1609,9 @@ function startGame(selectedSymbol) {
   gameActive = true;
 
   document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
+  document.getElementById('evalContainer').style.opacity = '1';
+  updateActiveModelNote(engineMode === 'wasm' ? 'best_model.onnx (Web Worker)' : 'local heuristic (fallback)');
+  
   updateRoster();
   SoundFX.click();
 
@@ -1610,6 +1621,35 @@ function startGame(selectedSymbol) {
   } else {
     updateStatus('You won the toss! Your move.', 'active');
   }
+  updateBoardUI();
+  setMobileSheetCollapsed(true);
+}
+
+function startPvP() {
+  if (!engineReady) return; 
+  isPvP = true;
+  humanSymbol = 'X';
+  aiSymbol = 'O';
+
+  resetGameState();
+
+  // Both are "human" in this mode, but we use 1 and -1 for board state
+  humanInternal = 1;
+  aiInternal = -1;
+  currentTurn = Math.random() < 0.5 ? 1 : -1;
+  gameActive = true;
+
+  document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
+  document.getElementById('evalContainer').style.opacity = '0.3';
+  updateActiveModelNote('Disabled (Pass & Play)');
+  updateEvalBar(0);
+  
+  updateRoster();
+  SoundFX.click();
+
+  const startingMark = currentTurn === 1 ? 'X' : 'O';
+  updateStatus(`Coin toss: ${startingMark} starts.`, 'active');
+  
   updateBoardUI();
   setMobileSheetCollapsed(true);
 }
@@ -1626,7 +1666,7 @@ function resetGame() {
 
 function resetGameState() {
   // Increment the game ID to explicitly orphan and ignore any currently running worker threads
-  currentGameId++;
+  currentGameId++; 
   
   board.fill(0);
   macroStatus.fill(0);
@@ -1645,13 +1685,13 @@ function updateMoveCount() {
 }
 
 function updateRoster() {
-  const you = document.getElementById('rosterYouMark');
-  const ai = document.getElementById('rosterAiMark');
-  you.textContent = humanSymbol;
-  you.className = 'mark-chip ' + (humanSymbol === 'X' ? 'chip-x' : 'chip-o');
-  ai.textContent = aiSymbol;
-  ai.className = 'mark-chip ' + (aiSymbol === 'X' ? 'chip-x' : 'chip-o');
-  document.getElementById('rosterRow').style.display = 'block';
+  const rosterRow = document.getElementById('rosterRow');
+  if (isPvP) {
+    rosterRow.innerHTML = `Player 1 <span class="mark-chip chip-x">X</span> &nbsp;·&nbsp; Player 2 <span class="mark-chip chip-o">O</span>`;
+  } else {
+    rosterRow.innerHTML = `You <span id="rosterYouMark" class="mark-chip ${humanSymbol === 'X' ? 'chip-x' : 'chip-o'}">${humanSymbol}</span> &nbsp;·&nbsp; Engine <span id="rosterAiMark" class="mark-chip ${aiSymbol === 'X' ? 'chip-x' : 'chip-o'}">${aiSymbol}</span>`;
+  }
+  rosterRow.style.display = 'block';
 }
 
 function updateBoardUI() {
@@ -1666,7 +1706,7 @@ function updateBoardUI() {
     }
 
     let macroClass = 'macro-grid';
-    if (isMacroActive && currentTurn === humanInternal) {
+    if (isMacroActive && (isPvP || currentTurn === humanInternal)) {
       macroClass += ' macro-active';
     } else if (gameActive && !isMacroActive && macroStatus[m] === 0) {
       macroClass += ' macro-inactive';
@@ -1715,7 +1755,7 @@ function updateBoardUI() {
           cellElem.innerHTML = '';
           cellElem.dataset.rendered = '';
         }
-        cellElem.disabled = !gameActive || !isMacroActive || currentTurn !== humanInternal;
+        cellElem.disabled = !gameActive || !isMacroActive || (!isPvP && currentTurn !== humanInternal);
       }
       cellElem.className = cellClass;
     }
@@ -1723,7 +1763,9 @@ function updateBoardUI() {
 }
 
 async function handleHumanMove(macro, micro) {
-  if (!gameActive || currentTurn !== humanInternal) return;
+  if (!gameActive) return;
+  if (!isPvP && currentTurn !== humanInternal) return;
+
   const idx = macro * 9 + micro;
   if (board[idx] !== 0 || macroStatus[macro] !== 0) return;
   if (activeGrid !== -1 && activeGrid !== macro) return;
@@ -1733,14 +1775,20 @@ async function handleHumanMove(macro, micro) {
   // they actually make a move, instead of leaving it covering the board.
   if (!mobileSheetCollapsed) setMobileSheetCollapsed(true, { hint: false });
 
-  makeMove(idx, humanInternal);
+  makeMove(idx, currentTurn);
   if (checkGameOver()) return;
 
-  currentTurn = aiInternal;
-  updateStatus('Engine is thinking...', 'pending');
-  updateBoardUI();
-
-  setTimeout(triggerAIMove, 450);
+  if (isPvP) {
+    currentTurn = -currentTurn;
+    const nextMark = currentTurn === 1 ? 'X' : 'O';
+    updateStatus(`${nextMark}'s turn.`, 'active');
+    updateBoardUI();
+  } else {
+    currentTurn = aiInternal;
+    updateStatus('Engine is thinking...', 'pending');
+    updateBoardUI();
+    setTimeout(triggerAIMove, 450);
+  }
 }
 
 // --------------------------------------------------------
@@ -1911,7 +1959,11 @@ function makeMove(idx, player) {
   moveCount++;
   updateMoveCount();
 
-  if (player === humanInternal) SoundFX.moveHuman(); else SoundFX.moveAI();
+  if (isPvP) {
+    SoundFX.moveHuman();
+  } else {
+    if (player === humanInternal) SoundFX.moveHuman(); else SoundFX.moveAI();
+  }
 
   const macro = Math.floor(idx / 9);
   const micro = idx % 9;
@@ -1950,9 +2002,15 @@ function checkGameOver() {
   const winner = checkSubGridWin(macroStatus);
   if (winner !== 0) {
     gameActive = false;
-    if (winner === humanInternal) { updateStatus('You won this one.', 'good'); SoundFX.gameWin(); }
-    else if (winner === aiInternal) { updateStatus('Engine won this one.', 'bad'); SoundFX.gameLose(); }
-    else { updateStatus("Board's full — a draw.", 'default'); SoundFX.gameDraw(); }
+    if (isPvP) {
+      if (winner === 1) { updateStatus('X wins the game!', 'good'); SoundFX.gameWin(); }
+      else if (winner === -1) { updateStatus('O wins the game!', 'good'); SoundFX.gameWin(); }
+      else { updateStatus("Board's full — a draw.", 'default'); SoundFX.gameDraw(); }
+    } else {
+      if (winner === humanInternal) { updateStatus('You won this one.', 'good'); SoundFX.gameWin(); }
+      else if (winner === aiInternal) { updateStatus('Engine won this one.', 'bad'); SoundFX.gameLose(); }
+      else { updateStatus("Board's full — a draw.", 'default'); SoundFX.gameDraw(); }
+    }
     updateBoardUI();
     setMobileSheetCollapsed(false);
     return true;
@@ -1963,7 +2021,7 @@ function checkGameOver() {
 function updateHint() {
   const el = document.getElementById('statusHint');
   if (!el) return;
-  if (gameActive && freeMoveRule && currentTurn === humanInternal) {
+  if (gameActive && freeMoveRule && (isPvP || currentTurn === humanInternal)) {
     el.textContent = 'Sent to a finished board — play anywhere open.';
     el.classList.remove('hidden');
   } else {
@@ -1991,6 +2049,13 @@ function updateStatus(msg, kind = 'default') {
 
 function updateEvalBar(val) {
   const valElem = document.getElementById('evalValue');
+  if (isPvP) {
+    valElem.textContent = 'PvP Mode';
+    valElem.style.color = 'var(--chalk-dim)';
+    document.getElementById('evalBarX').style.width = `50%`;
+    document.getElementById('evalBarO').style.width = `50%`;
+    return;
+  }
   valElem.textContent = val > 0 ? `+${val.toFixed(2)}` : val.toFixed(2);
   
   if (val > 0.05) valElem.style.color = 'var(--chalk-pink)';
