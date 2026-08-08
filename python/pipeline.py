@@ -41,9 +41,11 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
     if num_channels is not None:
         net_kwargs['num_channels'] = num_channels
 
-    device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
+    # DYNAMIC MULTI-GPU DETECTION
+    num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
+    device = torch.device("cuda" if num_gpus > 0 else "cpu")
             
-    print(f"Starting ZeroCross Training Pipeline on {device}")
+    print(f"Starting ZeroCross Training Pipeline on {device} ({num_gpus} GPU(s) detected)")
     
     if os.path.exists("/kaggle/working"):
         drive_dir = "/kaggle/working/models"
@@ -79,13 +81,16 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         print(f"Loading existing champion from {model_path}")
         checkpoint = torch.load(model_path, map_location=device, weights_only=False)
         
-        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-            best_net.load_state_dict(checkpoint['model_state_dict'])
+        state_dict = checkpoint['model_state_dict'] if (isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint) else checkpoint
+        
+        # STRIP 'module.' PREFIX IF LOADED FROM A PREVIOUS MULTI-GPU RUN
+        state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+        best_net.load_state_dict(state_dict)
+        
+        if isinstance(checkpoint, dict) and 'optimizer_state_dict' in checkpoint:
             optimizer_state = checkpoint.get('optimizer_state_dict', None)
             if start_iteration == 0:
                 start_iteration = checkpoint.get('iteration', 0)
-        else:
-            best_net.load_state_dict(checkpoint)
             
     best_net.to(device)
     replay_buffer = deque(maxlen=max_buffer_size)
@@ -106,12 +111,13 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         current_iter = i + 1
         print(f"\nALPHAZERO ITERATION {current_iter} of {start_iteration + iterations}")
         
+        # UPDATED LR SCHEDULE FOR MASSIVE BATCH SIZES (2048)
         if current_iter <= 100:
             current_lr = 0.001
         elif current_iter <= 250:
-            current_lr = 0.0001
+            current_lr = 0.0005
         else:
-            current_lr = 0.00001
+            current_lr = 0.0001
             
         print(f"Current Learning Rate: {current_lr}")
         
@@ -165,6 +171,11 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 candidate_net = ZeroCrossNet(**net_kwargs).to(device)
                 candidate_net.load_state_dict(best_net.state_dict())
                 
+                # IMPLEMENT DATAPARALLEL IF MULTIPLE GPUS DETECTED
+                if num_gpus > 1:
+                    print(f"🔥 Utilizing {num_gpus} GPUs with DataParallel for Training")
+                    candidate_net = torch.nn.DataParallel(candidate_net)
+                
                 candidate_net, opt_state, metrics = train_network(
                     candidate_net, 
                     list(replay_buffer), 
@@ -176,6 +187,9 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 )
                 train_duration = time.time() - train_start
         
+        # UNWRAP THE MODEL FOR CLEAN EVALUATION AND SAVING
+        raw_candidate = candidate_net.module if hasattr(candidate_net, 'module') else candidate_net
+
         if do_evaluate:
             print(f"\n[3/4] Comprehensive Evaluation ({eval_games} games/match)")
             eval_start = time.time()
@@ -189,15 +203,14 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 print(f"Loading historical opponent: {selected_history}")
                 hist_net = ZeroCrossNet(**net_kwargs).to(device)
                 checkpoint = torch.load(hist_path, map_location=device, weights_only=False)
-                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                    hist_net.load_state_dict(checkpoint['model_state_dict'])
-                else:
-                    hist_net.load_state_dict(checkpoint)
+                state_dict = checkpoint['model_state_dict'] if (isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint) else checkpoint
+                state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+                hist_net.load_state_dict(state_dict)
                 hist_net.eval()
                 champion_nets.append(hist_net)
 
             promoted, rand_wr, champ_wr, elo_diff = evaluator.run_full_evaluation(
-                candidate_net=candidate_net,
+                candidate_net=raw_candidate,
                 champion_nets=champion_nets,
                 sims=eval_sims,
                 games_per_match=eval_games
@@ -208,7 +221,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             print("\n[4/4] Model Gating")
             torch.save({
                 'iteration': current_iter,
-                'model_state_dict': candidate_net.state_dict(),
+                'model_state_dict': raw_candidate.state_dict(),
                 'optimizer_state_dict': opt_state,
                 'learning_rate': current_lr,
                 'timestamp': time.time()
@@ -218,14 +231,18 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 promoted = True
                 print("Evaluation skipped. Force promoting candidate.")
 
+            # IMPLEMENTING MAX_REJECTIONS OVERRIDE
             if not promoted:
                 consecutive_rejections += 1
-                print(f"REJECTED Candidate failed to clear the confidence bounds. "
-                      f"({consecutive_rejections} consecutive rejections)")
+                if consecutive_rejections >= max_consecutive_rejections:
+                    print(f"FORCED PROMOTION: Reached {consecutive_rejections} rejections. Force upgrading candidate to break stagnation!")
+                    promoted = True
+                else:
+                    print(f"REJECTED Candidate failed to clear the confidence bounds. ({consecutive_rejections}/{max_consecutive_rejections} rejections)")
 
             if promoted:
                 print(f"UPGRADE Candidate promoted! Saving to {model_path}")
-                best_net.load_state_dict(candidate_net.state_dict())
+                best_net.load_state_dict(raw_candidate.state_dict())
                 optimizer_state = opt_state
                 consecutive_rejections = 0
                 

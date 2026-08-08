@@ -241,17 +241,14 @@ body {
   aspect-ratio: 1 / 1;
 }
 
-/* Applied only for the duration of a mobile sheet toggle (see
-   syncBoardForSheetTransition in the script) so the board's explicit
-   pixel width/height — set once, synchronously, to their final target —
-   can animate smoothly via native CSS instead of JS nudging them every
-   frame. Scoped to a temporary class so ordinary resizes/orientation
-   changes still snap instantly instead of animating unexpectedly. */
-.board-frame.sheet-sync {
-  transition: background 0.3s ease, box-shadow 0.3s ease,
-    width 0.32s cubic-bezier(0.22, 0.8, 0.25, 1),
-    height 0.32s cubic-bezier(0.22, 0.8, 0.25, 1);
-}
+/* NOTE: .board-frame's width/height are deliberately NOT transitioned.
+   Animating width/height directly forces the browser to re-layout the
+   entire 81-cell board subtree on every single animation frame — real,
+   unavoidable cost regardless of whether the change comes from JS or CSS.
+   Instead, syncBoardForSheetTransition() in the script snaps width/height
+   to their final value instantly (one cheap layout pass) and fakes the
+   smooth "grow/shrink" with a transform:scale() animation applied inline,
+   which runs entirely on the compositor and never touches layout. */
 
 .board-grid {
   position: relative;
@@ -1199,7 +1196,7 @@ function updateBoardOffset() {
 function sizeBoardFrame() {
   const stage = document.querySelector('.board-stage');
   const frame = document.querySelector('.board-frame');
-  if (!stage || !frame) return;
+  if (!stage || !frame) return null;
 
   const rect = stage.getBoundingClientRect();
   const cs = getComputedStyle(stage);
@@ -1213,35 +1210,44 @@ function sizeBoardFrame() {
   if (size > 0) {
     frame.style.width = size + 'px';
     frame.style.height = size + 'px';
+    return size;
   }
+  return null;
 }
 
 // --------------------------------------------------------
 // Sheet-toggle sync.
 //
-// Perf history: this used to run a requestAnimationFrame loop for the
-// full ~400ms of the sheet's slide, calling getBoundingClientRect() +
-// a style write on (up to) every frame. That read-then-write pattern is
+// Perf history, round 1: this used to run a requestAnimationFrame loop
+// for the full ~400ms of the sheet's slide, calling getBoundingClientRect()
+// + a style write on (up to) every frame. That read-then-write pattern is
 // classic layout thrashing — each read forces the browser to flush any
-// pending layout synchronously, which fights the sheet's own (otherwise
-// compositor-only, cheap) transform animation, and was the actual cause
-// of the stutter when opening/closing the panel on phones.
+// pending layout synchronously, fighting the sheet's own (otherwise
+// compositor-only, cheap) transform animation.
 //
-// Fix: we don't need to poll at all. Both endpoints of the animation are
-// known in advance — collapsed always leaves exactly 52px of the handle
-// visible (matches translateY(calc(100% - 52px)) in the CSS), and
-// expanded always covers exactly the aside's own natural height, which
-// `offsetHeight` reports correctly regardless of the slide's transform
-// (transform never changes layout size). So we measure once, write the
-// two target values (the --board-cover custom property, and the
-// board-frame's pixel width/height) a single time, and let native CSS
-// transitions do the interpolation on the compositor/style-engine's own
-// schedule — no further JS involvement, no per-frame reads.
+// Perf history, round 2: replacing the loop with a single measurement
+// plus a native CSS transition on width/height removed the thrashing, but
+// width/height are themselves layout-affecting properties — animating
+// them, even smoothly via CSS, still forces the browser to re-layout the
+// entire 81-cell board subtree on every rendered frame for the whole
+// transition. On slower phones that's still enough work per frame to be
+// felt as residual jank.
+//
+// Fix: separate "what size is the board" from "what size does it LOOK
+// like right now". We snap width/height to their final target in one
+// shot (one unavoidable, one-time layout pass — see sizeBoardFrame),
+// then immediately apply an inline transform:scale() that makes the
+// frame visually appear at its OLD size, and transition that scale back
+// to 1. Transform never triggers layout, so the entire visual animation
+// after that first snap runs on the compositor only — the 81 cells are
+// laid out exactly once per toggle, not once per frame.
 // --------------------------------------------------------
 const SHEET_TRANSITION_MS = 320;
 const SHEET_COLLAPSED_COVER_PX = 52; // matches translateY(calc(100% - 52px)) in CSS
 
 function syncBoardForSheetTransition(collapsing) {
+  const frame = document.querySelector('.board-frame');
+
   if (!isSheetLayoutActive()) {
     document.documentElement.style.setProperty('--board-cover', '0px');
     sizeBoardFrame();
@@ -1249,22 +1255,36 @@ function syncBoardForSheetTransition(collapsing) {
   }
 
   const asideElem = document.querySelector('.content > aside');
-  const frame = document.querySelector('.board-frame');
   const targetCover = collapsing
     ? SHEET_COLLAPSED_COVER_PX
     : (asideElem ? asideElem.offsetHeight : SHEET_COLLAPSED_COVER_PX);
 
-  // Let width/height transition smoothly for the duration of this one
-  // toggle only, so ordinary resizes/orientation changes elsewhere keep
-  // snapping instantly instead of animating unexpectedly.
-  if (frame) frame.classList.add('sheet-sync');
+  // Read the frame's CURRENT on-screen size before changing anything —
+  // this is the "First" step of the FLIP technique, and it's cheap here
+  // because nothing is dirty yet (no pending style writes to flush).
+  const oldSize = frame ? frame.getBoundingClientRect().width : 0;
 
   document.documentElement.style.setProperty('--board-cover', targetCover + 'px');
-  sizeBoardFrame();
+  const newSize = sizeBoardFrame(); // "Last": snaps to the real final size (one forced layout)
 
-  if (frame) {
-    clearTimeout(frame._sheetSyncTimer);
-    frame._sheetSyncTimer = setTimeout(() => frame.classList.remove('sheet-sync'), SHEET_TRANSITION_MS + 60);
+  if (frame && oldSize > 0 && newSize) {
+    const scale = oldSize / newSize;
+    if (Math.abs(scale - 1) > 0.01) {
+      // "Invert": jump the frame back to looking like its old size...
+      frame.style.willChange = 'transform';
+      frame.style.transition = 'none';
+      frame.style.transform = `scale(${scale})`;
+      void frame.offsetWidth; // flush, so the next write is treated as a fresh change to animate
+      // ...then "Play": transition the scale to 1, i.e. its real new size.
+      frame.style.transition = `background 0.3s ease, box-shadow 0.3s ease, transform ${SHEET_TRANSITION_MS}ms cubic-bezier(0.22, 0.8, 0.25, 1)`;
+      frame.style.transform = 'scale(1)';
+      clearTimeout(frame._scaleCleanupTimer);
+      frame._scaleCleanupTimer = setTimeout(() => {
+        frame.style.transition = '';
+        frame.style.transform = '';
+        frame.style.willChange = '';
+      }, SHEET_TRANSITION_MS + 60);
+    }
   }
 }
 
