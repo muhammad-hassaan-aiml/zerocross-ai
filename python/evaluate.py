@@ -155,13 +155,43 @@ class Evaluator:
         
         return win_rate, elo_diff, p1_wins, p2_wins, draws
 
-    def run_full_evaluation(self, candidate_net, champion_nets, sims=50, games_per_match=20):
+    def run_full_evaluation(self, candidate_net, champion_nets, sims=50, games_per_match=20,
+                             check_random_baseline=True, random_baseline_games=None,
+                             random_baseline_sims=None, last_random_baseline_wr=0.0):
+        """
+        check_random_baseline, random_baseline_games, random_baseline_sims:
+        the "Candidate vs Random Baseline" matchup below is a sanity metric
+        only -- notice its result (cand_vs_rand_wr) never appears in the
+        promotion decision further down, only WR/LCB against champion_nets
+        does. Once the network is any good at all, "does it still beat
+        random moves" stops being informative on any single iteration; it's
+        useful as a slow trend line (did something break?), not as a thing
+        worth re-measuring at full precision every iteration.
+
+        So this match is controllable independently of the real gating
+        matches: check_random_baseline=False skips it entirely for this
+        call (reusing last_random_baseline_wr for the return value), and
+        random_baseline_games/sims let it run cheaper than the
+        games_per_match/sims used for the matches that actually decide
+        promotion. Both default to games_per_match/sims (i.e. the old
+        behavior) when left as None, so existing callers are unaffected.
+        The calling pipeline decides the actual policy (e.g. "only check
+        every 10 iterations") -- this method just exposes the knobs.
+        """
         print(f"\nStarting Comprehensive Evaluation ({games_per_match} games per matchup)")
-        
-        print("\nMatchup 1: Candidate vs Random Baseline")
-        cand_vs_rand_wr, cand_vs_rand_elo, w, l, d = self.play_match_batched(candidate_net, None, games_per_match, sims)
-        print(f"Candidate vs Random | WR: {cand_vs_rand_wr:.2%} | Elo Diff: {cand_vs_rand_elo:+.0f} | W: {w} L: {l} D: {d}")
-        
+
+        if check_random_baseline:
+            rb_games = random_baseline_games if random_baseline_games is not None else games_per_match
+            rb_sims = random_baseline_sims if random_baseline_sims is not None else sims
+            print(f"\nMatchup 1: Candidate vs Random Baseline ({rb_games} games, {rb_sims} sims)")
+            cand_vs_rand_wr, cand_vs_rand_elo, w, l, d = self.play_match_batched(candidate_net, None, rb_games, rb_sims)
+            print(f"Candidate vs Random | WR: {cand_vs_rand_wr:.2%} | Elo Diff: {cand_vs_rand_elo:+.0f} | W: {w} L: {l} D: {d}")
+        else:
+            cand_vs_rand_wr = last_random_baseline_wr
+            print(f"\nMatchup 1: Candidate vs Random Baseline -- SKIPPED this iteration (reusing last "
+                  f"measured win rate {cand_vs_rand_wr:.2%}). This match never affects promotion, so it "
+                  f"doesn't need to run at full cost every single iteration.")
+
         if not champion_nets or champion_nets[0] is None:
             print("\nNo champion provided. Candidate becomes first champion by default.")
             return True, cand_vs_rand_wr, 1.0, 0.0
