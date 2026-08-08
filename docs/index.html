@@ -6,6 +6,10 @@
 <meta name="theme-color" content="#1e332a">
 <title>ZeroCross | Ultimate Tic-Tac-Toe Engine</title>
 
+<!-- PWA Manifest -->
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+
 <!-- Boot Splash (critical, dependency-free) -->
 <style>
   #bootSplash {
@@ -43,7 +47,6 @@
 </style>
 
 <script>
-  // Safety net for coi-serviceworker.js to prevent mobile browser throttling
   (function () {
     try {
       if (window.crossOriginIsolated) return;
@@ -59,7 +62,6 @@
   })();
 </script>
 
-<!-- Service Worker to unlock WebAssembly Multi-threading -->
 <script src="coi-serviceworker.js"></script>
 
 <meta name="description" content="Play Ultimate Tic-Tac-Toe against ZeroCross, a self-taught AlphaZero-style engine.">
@@ -87,7 +89,7 @@
   --board-cover: 66px;
 }
 
-html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; touch-action: manipulation; }
+html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 
 body {
   font-family: 'Kalam', cursive;
@@ -134,6 +136,7 @@ body {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  position: relative;
 }
 
 .mobile-sheet-handle {
@@ -141,25 +144,34 @@ body {
   width: 100%;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 0.25rem;
-  background: linear-gradient(180deg, rgba(255,255,255,0.04), transparent 70%);
+  background-color: var(--wood-dark);
+  background-image: linear-gradient(180deg, rgba(255,255,255,0.04), transparent 70%);
   border: none;
   border-radius: 18px 18px 0 0;
-  padding: 0.4rem 0 0.3rem;
+  border-bottom: 1px solid var(--tray-line);
+  padding: 0 0 4px 0;
   margin: 0;
   cursor: pointer;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
   position: sticky;
   top: 0;
-  min-height: 44px;
+  height: 48px;
+  min-height: 48px;
   box-sizing: border-box;
-  z-index: 2;
+  z-index: 10;
 }
 
 @media (min-width: 1024px) {
   .content { flex-direction: row; align-items: stretch; gap: 3rem; padding: 2rem 3rem; }
-  .content > aside { align-self: center; }
+  .content > aside { 
+    align-self: stretch; 
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+  }
 }
 
 @media (max-width: 1023px) and (orientation: landscape) and (max-height: 600px) {
@@ -172,11 +184,10 @@ body {
   flex: 0 0 auto;
   min-height: 0;
   min-width: 0;
-  max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
+  padding-right: 4px; 
 }
 
 @media (max-width: 1023px) {
@@ -189,20 +200,23 @@ body {
     margin: 0 auto;
     width: 100%;
     max-width: 640px;
-    max-height: min(85dvh, 650px);
+    max-height: min(82dvh, 620px);
     background: var(--wood-dark);
     border: 1px solid var(--tray-line);
     border-bottom: none;
     border-radius: 18px 18px 0 0;
     padding: 0 0.75rem calc(0.6rem + env(safe-area-inset-bottom));
-    box-shadow: 0 -16px 40px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 -16px 40px rgba(0, 0, 0, 0.6);
     z-index: 80;
     overscroll-behavior: contain;
     transform: translateY(0);
     will-change: transform;
-    transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.25, 1), background-color 0.3s ease, border-color 0.3s ease;
+    transition: transform 0.28s cubic-bezier(0.22, 0.8, 0.25, 1), background-color 0.3s ease, border-color 0.3s ease;
   }
-  .content > aside.aside-collapsed { transform: translateY(calc(100% - 44px)); }
+  .content > aside.aside-collapsed { 
+    transform: translateY(calc(100% - 48px)); 
+    overflow: hidden; 
+  }
   .board-stage { padding-bottom: var(--board-cover, 52px); }
 }
 
@@ -226,9 +240,6 @@ body {
   .board-stage { padding-bottom: 0 !important; }
 }
 
-.content > aside::-webkit-scrollbar { width: 4px; }
-.content > aside::-webkit-scrollbar-thumb { background: var(--tray-line); border-radius: 3px; }
-
 .tray-panel {
   background: var(--tray);
   border: 1px solid var(--tray-line);
@@ -238,14 +249,24 @@ body {
     0 8px 20px rgba(0, 0, 0, 0.35),
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
     0 0 0 1px rgba(0, 0, 0, 0.2) inset;
-  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .board-stage {
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
-  container-type: size;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.25rem 0 3.25rem; 
+  position: relative;
+  z-index: 1;
+}
+
+@media (min-width: 1024px) {
+  .board-stage { padding: 0; }
 }
 
 .board-frame {
@@ -257,17 +278,18 @@ body {
     0 2px 0 rgba(255, 255, 255, 0.06) inset,
     0 0 0 1px rgba(255, 255, 255, 0.05) inset,
     0 -30px 50px rgba(0, 0, 0, 0.25) inset;
-  transition: background 0.3s ease, box-shadow 0.3s ease;
-  width: min(100cqw, 100cqh);
-  height: min(100cqw, 100cqh);
+  transition: background 0.3s ease;
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  max-width: min(100%, 75vh);
+  max-height: 100%;
 }
 
 .board-grid {
   position: relative;
   background-color: var(--board-bg);
   background-image:
-    radial-gradient(ellipse at 25% 15%, var(--board-bg-2), transparent 55%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+    radial-gradient(ellipse at 25% 15%, var(--board-bg-2), transparent 55%);
   border-radius: 10px;
   padding: clamp(5px, 1.4vw, 10px);
   display: grid;
@@ -285,12 +307,12 @@ body {
   border-radius: 8px;
   padding: clamp(2px, 0.6vw, 4px);
   position: relative;
-  transition: box-shadow 0.3s ease, opacity 0.3s ease, border-color 0.3s ease;
+  transition: opacity 0.3s ease, border-color 0.3s ease;
 }
 
 .macro-active {
   border-color: var(--chalk-yellow);
-  box-shadow: 0 0 0 3px rgba(232, 209, 122, 0.15), 0 0 22px rgba(232, 209, 122, 0.16);
+  box-shadow: 0 0 14px rgba(232, 209, 122, 0.22);
 }
 
 .macro-active::after {
@@ -298,15 +320,16 @@ body {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  box-shadow: 0 0 0 3px rgba(232, 209, 122, 0.22), 0 0 34px rgba(232, 209, 122, 0.3);
+  border: 2px solid var(--chalk-yellow);
   opacity: 0;
   pointer-events: none;
-  animation: macro-breathe 2.2s ease-in-out infinite;
+  will-change: opacity;
+  animation: macro-breathe 1.8s ease-in-out infinite;
 }
 
 @keyframes macro-breathe {
-  0%, 100% { opacity: 0; }
-  50% { opacity: 1; }
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.75; }
 }
 
 .macro-inactive { opacity: 0.55; }
@@ -330,7 +353,7 @@ body {
   justify-content: center;
   position: relative;
   touch-action: manipulation;
-  transition: background-color 0.15s ease, border 0.15s ease, border-radius 0.15s ease;
+  transition: background-color 0.15s ease, border 0.15s ease;
 }
 .micro-cell:hover:not(:disabled) { background: rgba(238, 240, 226, 0.06); cursor: crosshair; }
 .micro-cell:disabled { cursor: default; }
@@ -339,12 +362,12 @@ body {
 .micro-cell.cell-last-x {
   border: 2px solid var(--chalk-pink);
   border-radius: 6px;
-  box-shadow: 0 0 12px rgba(240, 168, 160, 0.35);
+  box-shadow: 0 0 10px rgba(240, 168, 160, 0.3);
 }
 .micro-cell.cell-last-o {
   border: 2px solid var(--chalk-blue);
   border-radius: 6px;
-  box-shadow: 0 0 12px rgba(159, 211, 232, 0.35);
+  box-shadow: 0 0 10px rgba(159, 211, 232, 0.3);
 }
 
 .mark { width: 66%; height: 66%; overflow: visible; }
@@ -366,8 +389,7 @@ body {
   animation: stamp-down 0.32s cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
 @keyframes stamp-down {
-  0% { opacity: 0; transform: rotate(var(--stamp-rot, 0deg)) scale(1.7); }
-  60% { opacity: 1; }
+  0% { opacity: 0; transform: rotate(var(--stamp-rot, 0deg)) scale(1.5); }
   100% { opacity: 1; transform: rotate(var(--stamp-rot, 0deg)) scale(1); }
 }
 .stamp-ring { fill: none; stroke-width: 6; }
@@ -676,6 +698,7 @@ body {
   display: flex;
   flex-direction: column;
   transform: translateX(100%);
+  will-change: transform;
   transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.3s ease, border-color 0.3s ease;
 }
 .settings-drawer.open { transform: translateX(0); }
@@ -736,23 +759,47 @@ body {
 .history-item.history-x span.move-player { color: var(--chalk-pink); font-weight: bold; }
 .history-item.history-o span.move-player { color: var(--chalk-blue); font-weight: bold; }
 
-#historyList {
+/* ========================================= */
+/* FAST & BEAUTIFUL SCROLLBARS               */
+/* ========================================= */
+.content > aside,
+#historyList,
+.drawer-body {
   scrollbar-width: thin;
-  scrollbar-color: var(--chalk-dim) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
-#historyList::-webkit-scrollbar {
-  width: 8px;
+
+#historyList,
+.drawer-body {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
-#historyList::-webkit-scrollbar-track {
-  background: transparent;
+
+.content > aside::-webkit-scrollbar,
+#historyList::-webkit-scrollbar,
+.drawer-body::-webkit-scrollbar {
+  width: 6px;
 }
-#historyList::-webkit-scrollbar-thumb {
-  background: var(--chalk-dim);
-  border-radius: 999px;
-  border: 2px solid var(--tray);
+
+.content > aside::-webkit-scrollbar-track,
+#historyList::-webkit-scrollbar-track,
+.drawer-body::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
 }
-#historyList::-webkit-scrollbar-thumb:hover {
-  background: var(--chalk);
+
+.content > aside::-webkit-scrollbar-thumb,
+#historyList::-webkit-scrollbar-thumb,
+.drawer-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+}
+
+.content > aside::-webkit-scrollbar-thumb:hover,
+#historyList::-webkit-scrollbar-thumb:hover,
+.drawer-body::-webkit-scrollbar-thumb:hover {
+  background: var(--chalk-yellow);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -778,7 +825,7 @@ body {
 </svg>
 
 <div class="app-shell">
-  <header class="flex items-center justify-between gap-2 sm:gap-3 px-3.5 pt-2 pb-1 sm:px-5 sm:pt-3 lg:px-8 lg:pt-6 lg:pb-0 flex-shrink-0">
+  <header class="flex items-center justify-between gap-2 sm:gap-3 px-3.5 pt-2 pb-1 sm:px-5 sm:pt-3 lg:px-8 lg:pt-6 lg:pb-0 flex-shrink-0 relative z-10">
     <div class="flex items-center gap-2.5 min-w-0">
       <svg viewBox="0 0 100 100" aria-hidden="true" class="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 flex-shrink-0">
         <rect width="100" height="100" rx="16" fill="var(--board-bg)"/>
@@ -827,7 +874,7 @@ body {
 
   <main class="content">
     <aside class="flex flex-col gap-2 sm:gap-2.5 lg:gap-3 w-full lg:w-[320px] lg:flex-shrink-0">
-      <button type="button" class="mobile-sheet-handle" id="mobileSheetHandle" onclick="toggleMobileSheet()" aria-expanded="true" aria-controls="controlPanel" aria-label="Toggle game panel">
+      <button type="button" class="mobile-sheet-handle flex-shrink-0" id="mobileSheetHandle" onclick="toggleMobileSheet()" aria-expanded="true" aria-controls="controlPanel" aria-label="Toggle game panel">
         <span class="handle-grip" aria-hidden="true"></span>
         <span class="handle-row">
           <span class="handle-text" id="mobileHandleText">Loading Engine...</span>
@@ -835,7 +882,7 @@ body {
         </span>
       </button>
       
-      <div class="tray-panel" id="controlPanel">
+      <div class="tray-panel flex-shrink-0" id="controlPanel">
         <div id="sideSelectContainer" class="transition-opacity duration-300 opacity-40 pointer-events-none flex flex-col gap-2">
           <div>
             <span class="eyebrow block mb-1">Play vs Engine</span>
@@ -857,7 +904,7 @@ body {
         </div>
       </div>
 
-      <div class="tray-panel">
+      <div class="tray-panel flex-shrink-0">
         <div class="flex items-center justify-between mb-0.5">
           <span class="eyebrow">Status</span>
           <span id="moveCount" class="mono text-xs" style="color:var(--chalk-dim)"></span>
@@ -901,7 +948,7 @@ body {
         </div>
       </div>
 
-      <div class="tray-panel flex-col min-h-0" id="historyPanel" style="display:none; flex: 1;">
+      <div class="tray-panel flex-col min-h-0" id="historyPanel" style="display:none; flex: 1 1 0%;">
         <div class="flex items-center justify-between mb-2 flex-shrink-0">
           <span class="eyebrow" style="margin:0;">Move History</span>
           <div class="flex gap-1.5">
@@ -920,17 +967,19 @@ body {
         </div>
       </div>
 
-      <button id="mainActionBtn" onclick="resetGame()" class="chalk-btn btn-primary w-full py-2 sm:py-2.5 text-sm flex-shrink-0">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 21v-6h6"/></svg>
-        New Game
-      </button>
-
-      <button id="shareRecapBtn" onclick="shareRecap()" style="display:none; background:transparent; border:1px solid var(--tray-line); color:var(--chalk);" class="chalk-btn w-full py-2 sm:py-2.5 text-sm flex-shrink-0 hover:bg-[rgba(255,255,255,0.05)] transition-colors">
-        <span id="shareRecapText" class="flex items-center justify-center gap-2">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
-          Share Recap
-        </span>
-      </button>
+      <div class="flex-shrink-0 pb-1 pt-1">
+        <button id="mainActionBtn" onclick="resetGame()" class="chalk-btn btn-primary w-full py-2 sm:py-2.5 text-sm flex-shrink-0 mb-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 21v-6h6"/></svg>
+          New Game
+        </button>
+  
+        <button id="shareRecapBtn" onclick="shareRecap()" style="display:none; background:transparent; border:1px solid var(--tray-line); color:var(--chalk);" class="chalk-btn w-full py-2 sm:py-2.5 text-sm flex-shrink-0 hover:bg-[rgba(255,255,255,0.05)] transition-colors">
+          <span id="shareRecapText" class="flex items-center justify-center gap-2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+            Share Recap
+          </span>
+        </button>
+      </div>
 
     </aside>
 
@@ -1106,17 +1155,41 @@ const themes = {
       '--chalk-blue': '#38bdf8', '--ink-red': '#e11d48', '--ink-blue': '#0284c7', '--ink-gray': '#78350f',
       '--tray': '#0d0803', '--tray-line': 'rgba(251, 191, 36, 0.12)'
     }
+  },
+  colorblindPro: {
+    name: "Accessible (High Contrast)",
+    vars: {
+      '--board-bg': '#121212', '--board-bg-2': '#1e1e1e', '--wood': '#2d2d2d', '--wood-dark': '#080808',
+      '--chalk': '#ffffff', '--chalk-dim': '#a0a0a0', '--chalk-yellow': '#f0e442', '--chalk-pink': '#d55e00',
+      '--chalk-blue': '#0072b2', '--ink-red': '#d55e00', '--ink-blue': '#0072b2', '--ink-gray': '#999999',
+      '--tray': '#1a1a1a', '--tray-line': 'rgba(255, 255, 255, 0.2)'
+    }
   }
 };
 
 const SoundFX = (() => {
   let ctx = null;
+  let masterGain = null;
+  let limiter = null;
   let enabled = localStorage.getItem('zc_sound') !== 'off';
+  const BOOST = 1.5; 
 
   function ensureCtx() {
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
-      if (AC) ctx = new AC();
+      if (AC) {
+        ctx = new AC();
+        limiter = ctx.createDynamicsCompressor();
+        limiter.threshold.setValueAtTime(-16, ctx.currentTime);
+        limiter.knee.setValueAtTime(18, ctx.currentTime);
+        limiter.ratio.setValueAtTime(10, ctx.currentTime);
+        limiter.attack.setValueAtTime(0.003, ctx.currentTime);
+        limiter.release.setValueAtTime(0.18, ctx.currentTime);
+        masterGain = ctx.createGain();
+        masterGain.gain.value = 1;
+        masterGain.connect(limiter);
+        limiter.connect(ctx.destination);
+      }
     }
     if (ctx && ctx.state === 'suspended') ctx.resume();
     return ctx;
@@ -1132,10 +1205,11 @@ const SoundFX = (() => {
     osc.type = type;
     osc.frequency.setValueAtTime(freq, t0);
     if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, t0 + duration * 0.8);
+    const g = gain * BOOST;
     amp.gain.setValueAtTime(0.0001, t0);
-    amp.gain.linearRampToValueAtTime(gain, t0 + 0.008);
+    amp.gain.linearRampToValueAtTime(g, t0 + 0.008);
     amp.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-    osc.connect(amp).connect(ac.destination);
+    osc.connect(amp).connect(masterGain);
     osc.start(t0);
     osc.stop(t0 + duration + 0.02);
   }
@@ -1155,8 +1229,8 @@ const SoundFX = (() => {
     filt.type = 'lowpass';
     filt.frequency.value = filterFreq;
     const amp = ac.createGain();
-    amp.gain.value = gain;
-    src.connect(filt).connect(amp).connect(ac.destination);
+    amp.gain.value = gain * BOOST;
+    src.connect(filt).connect(amp).connect(masterGain);
     src.start(t0);
   }
 
@@ -1164,15 +1238,15 @@ const SoundFX = (() => {
     isEnabled: () => enabled,
     setEnabled(v) { enabled = v; localStorage.setItem('zc_sound', v ? 'on' : 'off'); },
     unlock() { ensureCtx(); },
-    click()      { tone({ freq: 720, duration: 0.05, type: 'square', gain: 0.09 }); },
-    moveHuman()  { tone({ freq: 520, duration: 0.09, type: 'sine', gain: 0.3 }); tone({ freq: 780, duration: 0.05, type: 'sine', gain: 0.12, delay: 0.02 }); },
-    moveAI()     { tone({ freq: 300, duration: 0.12, type: 'triangle', gain: 0.3 }); },
-    microWin()   { tone({ freq: 200, duration: 0.18, type: 'sawtooth', gain: 0.2 }); noiseBurst({ duration: 0.12, gain: 0.14, filterFreq: 900 }); },
-    gameWin()    { [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone({ freq: f, duration: 0.32, type: 'triangle', gain: 0.25, delay: i * 0.09 })); },
-    gameLose()   { [400, 340, 260, 180].forEach((f, i) => tone({ freq: f, duration: 0.28, type: 'sawtooth', gain: 0.2, delay: i * 0.1 })); },
-    gameDraw()   { tone({ freq: 340, duration: 0.22, type: 'sine', gain: 0.2 }); tone({ freq: 340, duration: 0.22, type: 'sine', gain: 0.2, delay: 0.16 }); },
-    drawerOpen() { tone({ freq: 480, duration: 0.09, type: 'sine', gain: 0.1, glideTo: 720 }); },
-    drawerClose(){ tone({ freq: 720, duration: 0.09, type: 'sine', gain: 0.1, glideTo: 460 }); }
+    click()      { tone({ freq: 720, duration: 0.05, type: 'square', gain: 0.13 }); },
+    moveHuman()  { tone({ freq: 520, duration: 0.09, type: 'sine', gain: 0.4 }); tone({ freq: 780, duration: 0.05, type: 'sine', gain: 0.17, delay: 0.02 }); },
+    moveAI()     { tone({ freq: 300, duration: 0.12, type: 'triangle', gain: 0.4 }); },
+    microWin()   { tone({ freq: 200, duration: 0.18, type: 'sawtooth', gain: 0.27 }); noiseBurst({ duration: 0.12, gain: 0.19, filterFreq: 900 }); },
+    gameWin()    { [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone({ freq: f, duration: 0.32, type: 'triangle', gain: 0.33, delay: i * 0.09 })); },
+    gameLose()   { [400, 340, 260, 180].forEach((f, i) => tone({ freq: f, duration: 0.28, type: 'sawtooth', gain: 0.27, delay: i * 0.1 })); },
+    gameDraw()   { tone({ freq: 340, duration: 0.22, type: 'sine', gain: 0.27 }); tone({ freq: 340, duration: 0.22, type: 'sine', gain: 0.27, delay: 0.16 }); },
+    drawerOpen() { tone({ freq: 480, duration: 0.09, type: 'sine', gain: 0.14, glideTo: 720 }); },
+    drawerClose(){ tone({ freq: 720, duration: 0.09, type: 'sine', gain: 0.14, glideTo: 460 }); }
   };
 })();
 
@@ -1277,33 +1351,6 @@ window.addEventListener('keydown', (e) => {
 
 let mobileSheetCollapsed = false;
 
-function isSheetLayoutActive() {
-  const isNarrow = window.matchMedia('(max-width: 1023px)').matches;
-  const isShortLandscape = window.matchMedia('(orientation: landscape) and (max-height: 600px)').matches;
-  return isNarrow && !isShortLandscape;
-}
-
-const SHEET_COLLAPSED_COVER_PX = 44; 
-
-function computeTargetCover() {
-  if (!isSheetLayoutActive()) return 0;
-  if (mobileSheetCollapsed) return SHEET_COLLAPSED_COVER_PX;
-  const asideElem = document.querySelector('.content > aside');
-  return asideElem ? asideElem.offsetHeight : SHEET_COLLAPSED_COVER_PX;
-}
-
-function applyBoardCover() {
-  document.documentElement.style.setProperty('--board-cover', computeTargetCover() + 'px');
-}
-
-function updateBoardOffset() {
-  applyBoardCover();
-}
-
-function syncBoardForSheetTransition() {
-  applyBoardCover();
-}
-
 function setMobileSheetCollapsed(collapsed, opts = {}) {
   mobileSheetCollapsed = collapsed;
   const asideElem = document.querySelector('.content > aside');
@@ -1318,50 +1365,11 @@ function setMobileSheetCollapsed(collapsed, opts = {}) {
       setTimeout(() => handle.classList.remove('hint-bounce'), 1200);
     }
   }
-  syncBoardForSheetTransition();
 }
 
 function toggleMobileSheet() {
   setMobileSheetCollapsed(!mobileSheetCollapsed);
   SoundFX.click();
-}
-
-function initBoardOffsetTracking() {
-  updateBoardOffset();
-
-  const asideElem = document.querySelector('.content > aside');
-
-  if ('ResizeObserver' in window && asideElem) {
-    const ro = new ResizeObserver(() => updateBoardOffset());
-    ro.observe(asideElem, { box: 'border-box' });
-  }
-
-  let resizeTimer = null;
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(updateBoardOffset, 100);
-  });
-
-  window.addEventListener('orientationchange', () => {
-    setTimeout(updateBoardOffset, 50);
-    setTimeout(updateBoardOffset, 300);
-    setTimeout(updateBoardOffset, 600);
-  });
-
-  if (window.visualViewport) {
-    let vvTimer = null;
-    window.visualViewport.addEventListener('resize', () => {
-      clearTimeout(vvTimer);
-      vvTimer = setTimeout(updateBoardOffset, 100);
-    });
-  }
-
-  setTimeout(updateBoardOffset, 150);
-  setTimeout(updateBoardOffset, 500);
-
-  if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(updateBoardOffset);
-  }
 }
 
 function getSimulations() {
@@ -1459,7 +1467,7 @@ function stampMarkup(status, macroIdx) {
   const rot = seededJitter(macroIdx + 50, 10).toFixed(1);
   if (status === 2) {
     return `<svg class="stamp stamp-draw" viewBox="0 0 100 100" style="--stamp-rot:${rot}deg">
-      <circle class="stamp-ring" cx="50" cy="50" r="40" filter="url(#chalk-rough)"/>
+      <circle class="stamp-ring" cx="50" cy="50" r="40"/>
       <text x="50" y="59" text-anchor="middle" font-size="34">–</text>
     </svg>`;
   }
@@ -1469,7 +1477,7 @@ function stampMarkup(status, macroIdx) {
   const winClass = isX ? 'stamp-win-x' : 'stamp-win-o';
 
   return `<svg class="stamp ${winClass}" viewBox="0 0 100 100" style="--stamp-rot:${rot}deg">
-    <circle class="stamp-ring" cx="50" cy="50" r="40" filter="url(#chalk-rough)"/>
+    <circle class="stamp-ring" cx="50" cy="50" r="40"/>
     <text x="50" y="61" text-anchor="middle" font-size="38">${letter}</text>
   </svg>`;
 }
@@ -1924,12 +1932,10 @@ async function handleHumanMove(macro, micro) {
   if (checkGameOver()) return;
 
   if (isPvP) {
-    currentTurn = -currentTurn;
     const nextMark = currentTurn === 1 ? 'X' : 'O';
     updateStatus(`${nextMark}'s turn.`, 'active');
     updateBoardUI();
   } else {
-    currentTurn = aiInternal;
     updateStatus('Engine is thinking...', 'pending');
     updateBoardUI();
     aiTimeoutId = setTimeout(triggerAIMove, 450);
@@ -1972,7 +1978,6 @@ function handleWorkerMove(ai_move, rootVal, incomingGameId, candidateMoves) {
   console.log(`AI plays: Macro ${ai_macro + 1}, Micro Cell ${ai_micro + 1}`);
 
   if (!checkGameOver()) {
-    currentTurn = humanInternal;
     updateStatus('Your move.', 'active');
     updateBoardUI();
   }
@@ -2002,7 +2007,6 @@ async function triggerFallbackAIMove() {
   console.log(`AI (fallback) plays: Macro ${ai_macro + 1}, Micro Cell ${ai_micro + 1}`);
 
   if (!checkGameOver()) {
-    currentTurn = humanInternal;
     updateStatus('Your move.', 'active');
     updateBoardUI();
   }
@@ -2120,6 +2124,10 @@ function makeMove(idx, player, candidates = null) {
     freeMoveRule = true;
   } else {
     activeGrid = micro;
+  }
+
+  if (player !== 0) {
+    currentTurn = -player;
   }
 
   renderInsights(candidates);
