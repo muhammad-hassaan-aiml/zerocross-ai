@@ -51,8 +51,6 @@
     try {
       if (window.crossOriginIsolated) return;
       if (!('serviceWorker' in navigator)) return;
-      var ref = document.referrer || '';
-      if (ref.indexOf('accounts.google.com') !== -1 || ref.indexOf('zerocross-ai.firebaseapp.com') !== -1) return;
       var FLAG = 'zc_coi_boot_reload';
       if (sessionStorage.getItem(FLAG)) return;
       setTimeout(function () {
@@ -2560,7 +2558,7 @@ window.onload = () => {
 <!-- Firebase Authentication and Database Sync Core -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-  import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -2579,8 +2577,7 @@ window.onload = () => {
   provider.setCustomParameters({ prompt: 'select_account' });
 
   let currentUser = null;
-  let isRedirecting = false;
-  let hasCheckedRedirect = false; // The Lock to prevent the race condition
+  let isSigningIn = false;
 
   const authBtn = document.getElementById('authBtn');
   // Keep the button inert until we actually know the auth state, so an
@@ -2606,45 +2603,24 @@ window.onload = () => {
     return "Sign-in failed. Please try again.";
   }
 
-  // 1. WAIT for Google to return BEFORE creating any anonymous guests
-  getRedirectResult(auth).then((result) => {
-    hasCheckedRedirect = true;
-    if (result && result.user) {
-      console.log("Google Login Successful:", result.user.displayName);
-      if (window.updateStatus) {
-        window.updateStatus(`Signed in as ${result.user.displayName || result.user.email || 'your account'}.`, 'good');
-      }
-    } else if (!auth.currentUser) {
-      // It was a normal page load, safe to create a guest account
-      signInAnonymously(auth).catch(console.error);
-    }
-  }).catch((error) => {
-    hasCheckedRedirect = true;
-    console.error("Redirect Error:", error);
-    const msg = describeAuthError(error);
-    if (msg && window.updateStatus) window.updateStatus(msg, 'bad');
-    if (!auth.currentUser) signInAnonymously(auth).catch(console.error); // Fallback to guest on error
-  });
-
   window.handleAuthClick = async () => {
-    if (isRedirecting) return;
+    if (isSigningIn) return;
     const btnText = document.getElementById('authBtnText');
 
     if (currentUser && currentUser.isAnonymous) {
-      isRedirecting = true;
+      isSigningIn = true;
       if (btnText) btnText.textContent = "Connecting...";
       if (authBtn) authBtn.disabled = true;
       try {
-        await signInWithRedirect(auth, provider);
-        // The browser navigates away here; nothing below normally runs.
+        await signInWithPopup(auth, provider);
+        // onAuthStateChanged picks up the new user and refreshes the UI.
       } catch (error) {
-        // Without this, a blocked/unsupported redirect left the button
-        // stuck on "Connecting..." forever (isRedirecting never reset).
         console.error("Sign-in Error:", error);
         const msg = describeAuthError(error);
         if (msg && window.updateStatus) window.updateStatus(msg, 'bad');
-        isRedirecting = false;
         if (btnText) btnText.textContent = "Sign In";
+      } finally {
+        isSigningIn = false;
         if (authBtn) authBtn.disabled = false;
       }
     } else if (currentUser) {
@@ -2704,15 +2680,14 @@ window.onload = () => {
            if (authAvatar) authAvatar.style.display = 'none';
         }
         if (authPromo) authPromo.style.display = 'none';
-        
+        if (window.updateStatus) {
+          window.updateStatus(`Signed in as ${user.displayName || user.email || 'your account'}.`, 'good');
+        }
         await syncStats(user.uid);
       }
     } else {
       currentUser = null;
-      // ONLY create a guest if we know we aren't waiting for a Google redirect!
-      if (hasCheckedRedirect) {
-        signInAnonymously(auth).catch(console.error);
-      }
+      signInAnonymously(auth).catch(console.error);
     }
   });
 
