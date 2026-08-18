@@ -51,6 +51,8 @@
     try {
       if (window.crossOriginIsolated) return;
       if (!('serviceWorker' in navigator)) return;
+      var ref = document.referrer || '';
+      if (ref.indexOf('accounts.google.com') !== -1 || ref.indexOf('zerocross-ai.firebaseapp.com') !== -1) return;
       var FLAG = 'zc_coi_boot_reload';
       if (sessionStorage.getItem(FLAG)) return;
       setTimeout(function () {
@@ -2580,11 +2582,38 @@ window.onload = () => {
   let isRedirecting = false;
   let hasCheckedRedirect = false; // The Lock to prevent the race condition
 
+  const authBtn = document.getElementById('authBtn');
+  // Keep the button inert until we actually know the auth state, so an
+  // early click during page load can't silently do nothing.
+  if (authBtn) authBtn.disabled = true;
+
+  // Turn the handful of errors a player might realistically hit into a
+  // message worth showing, instead of only logging to the console.
+  function describeAuthError(error) {
+    const code = error && error.code;
+    if (code === 'auth/unauthorized-domain') {
+      return "Sign-in isn't enabled for this domain (add it under Firebase Console \u2192 Authentication \u2192 Settings \u2192 Authorized domains).";
+    }
+    if (code === 'auth/network-request-failed') {
+      return "Sign-in failed \u2014 check your connection and try again.";
+    }
+    if (code === 'auth/operation-not-supported-in-this-environment' || code === 'auth/operation-not-allowed') {
+      return "Google sign-in isn't supported in this browser/app view.";
+    }
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      return null; // user-initiated cancel, nothing to alarm them with
+    }
+    return "Sign-in failed. Please try again.";
+  }
+
   // 1. WAIT for Google to return BEFORE creating any anonymous guests
   getRedirectResult(auth).then((result) => {
     hasCheckedRedirect = true;
-    if (result) {
+    if (result && result.user) {
       console.log("Google Login Successful:", result.user.displayName);
+      if (window.updateStatus) {
+        window.updateStatus(`Signed in as ${result.user.displayName || result.user.email || 'your account'}.`, 'good');
+      }
     } else if (!auth.currentUser) {
       // It was a normal page load, safe to create a guest account
       signInAnonymously(auth).catch(console.error);
@@ -2592,20 +2621,51 @@ window.onload = () => {
   }).catch((error) => {
     hasCheckedRedirect = true;
     console.error("Redirect Error:", error);
-    if (!auth.currentUser) signInAnonymously(auth); // Fallback to guest on error
+    const msg = describeAuthError(error);
+    if (msg && window.updateStatus) window.updateStatus(msg, 'bad');
+    if (!auth.currentUser) signInAnonymously(auth).catch(console.error); // Fallback to guest on error
   });
 
   window.handleAuthClick = async () => {
     if (isRedirecting) return;
+    const btnText = document.getElementById('authBtnText');
 
     if (currentUser && currentUser.isAnonymous) {
       isRedirecting = true;
-      const btnText = document.getElementById('authBtnText');
       if (btnText) btnText.textContent = "Connecting...";
-      await signInWithRedirect(auth, provider);
+      if (authBtn) authBtn.disabled = true;
+      try {
+        await signInWithRedirect(auth, provider);
+        // The browser navigates away here; nothing below normally runs.
+      } catch (error) {
+        // Without this, a blocked/unsupported redirect left the button
+        // stuck on "Connecting..." forever (isRedirecting never reset).
+        console.error("Sign-in Error:", error);
+        const msg = describeAuthError(error);
+        if (msg && window.updateStatus) window.updateStatus(msg, 'bad');
+        isRedirecting = false;
+        if (btnText) btnText.textContent = "Sign In";
+        if (authBtn) authBtn.disabled = false;
+      }
     } else if (currentUser) {
       if (confirm("Log out? You will play as a local guest instead.")) {
-        await signOut(auth);
+        if (authBtn) authBtn.disabled = true;
+        try {
+          await signOut(auth);
+          // The stats now in local storage belong to the account we just
+          // left. Start the next guest session with a clean slate instead
+          // of carrying (and possibly later re-merging) someone else's
+          // record.
+          window.gameStats = { w: 0, l: 0, d: 0 };
+          window.SafeStorage.set('zc_stats', JSON.stringify(window.gameStats));
+          window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: null, stats: { w: 0, l: 0, d: 0 } }));
+          if (window.updateStatsUI) window.updateStatsUI();
+        } catch (error) {
+          console.error("Sign-out Error:", error);
+          if (window.updateStatus) window.updateStatus("Couldn't sign out \u2014 please try again.", 'bad');
+        } finally {
+          if (authBtn) authBtn.disabled = false;
+        }
       }
     }
   };
@@ -2622,7 +2682,9 @@ window.onload = () => {
     const authIcon = document.getElementById('authIcon');
     const authAvatar = document.getElementById('authAvatar');
     const authPromo = document.getElementById('authPromo');
-    
+
+    if (authBtn) authBtn.disabled = false;
+
     if (user) {
       currentUser = user;
       if (user.isAnonymous) {
@@ -2635,6 +2697,11 @@ window.onload = () => {
            authAvatar.src = user.photoURL;
            authAvatar.style.display = 'block';
            if (authIcon) authIcon.style.display = 'none';
+        } else {
+           // No photo on the account (or it failed to load) — fall back
+           // to the icon instead of leaving a broken/blank avatar shown.
+           if (authIcon) authIcon.style.display = 'block';
+           if (authAvatar) authAvatar.style.display = 'none';
         }
         if (authPromo) authPromo.style.display = 'none';
         
@@ -2649,24 +2716,70 @@ window.onload = () => {
     }
   });
 
+  // Merge, don't overwrite. The previous version compared local vs. cloud
+  // totals and simply kept whichever was bigger — which silently discarded
+  // every stat on the losing side. That meant a guest who played a few
+  // rounds and then signed into an account that already had a longer
+  // history would instantly lose those rounds (or, the other way round,
+  // logging into a fresh account from a well-used guest browser could
+  // stomp real cloud history).
+  //
+  // Instead we track a "baseline" \u2014 the stats we know were already saved
+  // to this account's cloud record \u2014 and only fold in the difference
+  // between that baseline and what's stored locally now. That difference
+  // is exactly the games played locally since the last successful sync
+  // (pre-login guest games, or games played while offline), so re-running
+  // this on every page load doesn't add the same games twice.
   async function syncStats(uid) {
     const userRef = doc(db, 'users', uid);
-    const docSnap = await getDoc(userRef);
-    
-    let fsStats = {w:0, l:0, d:0};
-    if (docSnap.exists() && docSnap.data().stats) {
-      fsStats = docSnap.data().stats;
+    let fsStats = { w: 0, l: 0, d: 0 };
+    try {
+      const docSnap = await getDoc(userRef);
+      if (docSnap.exists() && docSnap.data().stats) {
+        fsStats = docSnap.data().stats;
+      }
+    } catch (error) {
+      // Can't reach Firestore right now — leave local stats untouched
+      // rather than guessing, and try again on the next sync.
+      console.error("Couldn't read cloud stats, leaving local stats untouched:", error);
+      return;
     }
-    
-    let localTotal = window.gameStats.w + window.gameStats.l + window.gameStats.d;
-    let fsTotal = fsStats.w + fsStats.l + fsStats.d;
-    
-    if (fsTotal > localTotal) {
-      window.gameStats = fsStats;
-      window.SafeStorage.set('zc_stats', JSON.stringify(fsStats));
-      window.updateStatsUI();
-    } else if (localTotal > fsTotal || localTotal > 0) {
-      await setDoc(userRef, { stats: window.gameStats }, {merge: true});
+
+    const localStats = window.gameStats || { w: 0, l: 0, d: 0 };
+
+    let baseline = { w: 0, l: 0, d: 0 };
+    try {
+      const raw = window.SafeStorage.get('zc_stats_baseline', null);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.uid === uid && parsed.stats) baseline = parsed.stats;
+      }
+    } catch (e) { /* corrupt baseline, treat as empty */ }
+
+    const delta = {
+      w: Math.max(0, localStats.w - baseline.w),
+      l: Math.max(0, localStats.l - baseline.l),
+      d: Math.max(0, localStats.d - baseline.d)
+    };
+
+    const merged = {
+      w: fsStats.w + delta.w,
+      l: fsStats.l + delta.l,
+      d: fsStats.d + delta.d
+    };
+
+    window.gameStats = merged;
+    window.SafeStorage.set('zc_stats', JSON.stringify(merged));
+    window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid, stats: merged }));
+    window.updateStatsUI();
+
+    const changed = delta.w + delta.l + delta.d > 0;
+    if (changed) {
+      try {
+        await setDoc(userRef, { stats: merged }, { merge: true });
+      } catch (error) {
+        console.error("Couldn't save merged stats to the cloud:", error);
+      }
     }
   }
 
@@ -2674,7 +2787,13 @@ window.onload = () => {
   window.saveStats = function(result) {
     originalSaveStats(result); 
     if (currentUser && !currentUser.isAnonymous) {
-      setDoc(doc(db, 'users', currentUser.uid), { stats: window.gameStats }, {merge: true}).catch(console.error);
+      setDoc(doc(db, 'users', currentUser.uid), { stats: window.gameStats }, {merge: true})
+        .then(() => {
+          // Keep the merge baseline current so the next syncStats() call
+          // (e.g. on the next page load) sees zero new local games here.
+          window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: currentUser.uid, stats: window.gameStats }));
+        })
+        .catch(console.error);
     }
   };
 </script>
