@@ -2558,7 +2558,8 @@ window.onload = () => {
 <!-- Firebase Authentication and Database Sync Core -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-  import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  // Import initializeAuth and browserLocalPersistence to bypass the blocked iframe
+  import { initializeAuth, browserLocalPersistence, signInAnonymously, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -2571,7 +2572,10 @@ window.onload = () => {
   };
 
   const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
+  // Initialize Auth explicitly WITHOUT the cross-tab iframe
+  const auth = initializeAuth(app, {
+    persistence: browserLocalPersistence
+  });
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -2579,7 +2583,7 @@ window.onload = () => {
   let currentUser = null;
   let isRedirecting = false;
 
-  // 1. Process the result cleanly when returning from Google
+  // Process the result cleanly when returning from Google
   getRedirectResult(auth).then((result) => {
     if (result) console.log("Login successful:", result.user);
   }).catch((error) => {
@@ -2588,9 +2592,8 @@ window.onload = () => {
   });
 
   window.handleAuthClick = async () => {
-    // If user is null, the background connection was blocked
     if (!currentUser) {
-        alert("Firebase is still connecting or was blocked. Check your browser console (F12) for red security errors.");
+        alert("Firebase is still syncing the background session. Please wait 2 seconds and try again.");
         return;
     }
     if (isRedirecting) return;
@@ -2651,7 +2654,6 @@ window.onload = () => {
       console.log("Attempting anonymous guest login...");
       signInAnonymously(auth).catch((err) => {
          console.error("Anonymous Sign-In Failed:", err);
-         alert("Firebase connection failed. Are you testing on 127.0.0.1 or using strict privacy settings?");
       });
     }
   });
