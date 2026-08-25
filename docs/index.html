@@ -985,11 +985,12 @@ body {
 
         <div id="rosterRow" class="mono text-xs mb-1" style="display:none; color:var(--chalk-dim)"></div>
         <div id="statsRow" class="items-center justify-between mb-1.5 lg:mb-2" style="display:none; background:rgba(0,0,0,0.15); border:1px solid var(--tray-line); border-radius:6px; padding:0.3rem 0.5rem;">
-          <span class="eyebrow" style="margin:0;">Record vs AI</span>
+          <span class="eyebrow" style="margin:0;">Record & Score</span>
           <div class="mono text-xs font-bold">
+            <span id="statScore" style="color:var(--chalk-yellow)">0</span> XP
+            <span style="color:var(--chalk-dim); font-weight:normal; margin:0 4px">|</span>
             <span id="statW" style="color:var(--chalk-pink)">0</span>W <span style="color:var(--chalk-dim); font-weight:normal; margin:0 2px">|</span>
-            <span id="statL" style="color:var(--chalk-blue)">0</span>L <span style="color:var(--chalk-dim); font-weight:normal; margin:0 2px">|</span>
-            <span id="statD" style="color:var(--chalk)">0</span>D
+            <span id="statL" style="color:var(--chalk-blue)">0</span>L
           </div>
         </div>
 
@@ -1127,13 +1128,18 @@ body {
       </div>
     </div>
 
+    <!-- NEW 7-TIER DIFFICULTY LADDER -->
     <div class="drawer-section">
       <span class="eyebrow block mb-2">Engine Difficulty</span>
       <div class="select-wrap">
         <select id="difficultySelect" class="native-select" onchange="selectDifficulty(this.value)">
-          <option value="easy">Easy (50 Sims)</option>
-          <option value="medium">Medium (200 Sims)</option>
-          <option value="hard">Hard (800 Sims)</option>
+          <option value="10">Beginner (10 Sims)</option>
+          <option value="25" selected>Novice (25 Sims)</option>
+          <option value="50">Casual (50 Sims)</option>
+          <option value="100">Intermediate (100 Sims)</option>
+          <option value="250">Advanced (250 Sims)</option>
+          <option value="500">Expert (500 Sims)</option>
+          <option value="1000">Grandmaster (1000 Sims)</option>
         </select>
         <svg class="select-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
       </div>
@@ -1216,13 +1222,17 @@ function loadGameStats() {
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' &&
-          Number.isFinite(parsed.w) && Number.isFinite(parsed.l) && Number.isFinite(parsed.d)) {
-        return { w: parsed.w, l: parsed.l, d: parsed.d };
+      if (parsed && typeof parsed === 'object') {
+        return { 
+          w: parsed.w || 0, 
+          l: parsed.l || 0, 
+          d: parsed.d || 0,
+          score: parsed.score || 0
+        };
       }
     } catch (e) {}
   }
-  return { w: 0, l: 0, d: 0 };
+  return { w: 0, l: 0, d: 0, score: 0 };
 }
 
 let gameStats = loadGameStats();
@@ -1238,7 +1248,20 @@ let viewingHistoryIdx = -1;
 let lastEvalValue = 0;
 let isScrubbing = false;
 
-// Compressed payload for Cloud Replays
+// 7-TIER ZEROSCORE DIFFICULTY LADDER (1:1 SIMS TO WIN XP)
+const diffConfig = {
+  '10': { sims: 10, w: 10, d: 2, l: 0, name: 'Beginner' },
+  '25': { sims: 25, w: 25, d: 5, l: 0, name: 'Novice' },
+  '50': { sims: 50, w: 50, d: 10, l: 0, name: 'Casual' },
+  '100': { sims: 100, w: 100, d: 20, l: -10, name: 'Intermediate' },
+  '250': { sims: 250, w: 250, d: 50, l: -25, name: 'Advanced' },
+  '500': { sims: 500, w: 500, d: 100, l: -50, name: 'Expert' },
+  '1000': { sims: 1000, w: 1000, d: 200, l: -100, name: 'Grandmaster' }
+};
+
+let currentDifficulty = SafeStorage.get('zc_difficulty', '25');
+if (!diffConfig[currentDifficulty]) currentDifficulty = '25';
+
 window.getReplayData = () => {
   const compressedMoves = moveHistory.filter(h => h.moveIdx !== -1).map(h => h.moveIdx);
   const startedBy = moveHistory.length > 1 ? moveHistory[1].player : 1; 
@@ -1247,7 +1270,7 @@ window.getReplayData = () => {
     moves: compressedMoves,
     starts: startedBy,
     humanSymbol: humanSymbol,
-    difficulty: currentDifficulty,
+    difficulty: diffConfig[currentDifficulty].name,
     winner: checkSubGridWin(macroStatus)
   };
 };
@@ -1272,15 +1295,6 @@ window.legacyCopyToClipboard = function(text) {
     return false;
   }
 };
-
-const difficultySimulations = {
-  easy: 50,
-  medium: 200,
-  hard: 800
-};
-
-let currentDifficulty = SafeStorage.get('zc_difficulty', 'easy');
-if (!difficultySimulations[currentDifficulty]) currentDifficulty = 'easy';
 
 const themes = {
   chalkWood: {
@@ -1663,11 +1677,11 @@ function initBoardOffsetTracking() {
 }
 
 function getSimulations() {
-  return difficultySimulations[currentDifficulty] || 50;
+  return diffConfig[currentDifficulty] ? diffConfig[currentDifficulty].sims : 25;
 }
 
 function selectDifficulty(diff) {
-  if (!difficultySimulations[diff]) return;
+  if (!diffConfig[diff]) return;
   currentDifficulty = diff;
   SafeStorage.set('zc_difficulty', diff);
   SoundFX.click();
@@ -1846,7 +1860,7 @@ window.applyReplayData = (data) => {
   
   humanSymbol = data.humanSymbol || 'X';
   aiSymbol = humanSymbol === 'X' ? 'O' : 'X';
-  currentDifficulty = data.difficulty || 'easy';
+  currentDifficulty = data.difficulty || '25';
   let simPlayer = data.starts || 1;
   
   pushState();
@@ -2207,16 +2221,31 @@ function updateMoveCount() {
 }
 
 window.updateStatsUI = function() {
+  document.getElementById('statScore').textContent = window.gameStats.score || 0;
   document.getElementById('statW').textContent = window.gameStats.w;
   document.getElementById('statL').textContent = window.gameStats.l;
-  document.getElementById('statD').textContent = window.gameStats.d;
 };
 
 window.saveStats = function(result) {
   if (isPvP) return;
-  if (result === 'win') window.gameStats.w++;
-  else if (result === 'loss') window.gameStats.l++;
-  else if (result === 'draw') window.gameStats.d++;
+  
+  const pts = diffConfig[currentDifficulty];
+  if (typeof window.gameStats.score === 'undefined') window.gameStats.score = 0;
+
+  if (result === 'win') { 
+      window.gameStats.w++; 
+      window.gameStats.score += pts.w; 
+  } else if (result === 'loss') { 
+      window.gameStats.l++; 
+      window.gameStats.score += pts.l; 
+  } else if (result === 'draw') { 
+      window.gameStats.d++; 
+      window.gameStats.score += pts.d; 
+  }
+
+  // Never drop below 0 XP
+  window.gameStats.score = Math.max(0, window.gameStats.score);
+
   SafeStorage.set('zc_stats', JSON.stringify(window.gameStats));
   window.updateStatsUI();
 };
@@ -2384,7 +2413,7 @@ function handleEngineError(err) {
 }
 
 async function triggerFallbackAIMove() {
-  const thinkMs = { easy: 250, medium: 450, hard: 700 }[currentDifficulty] || 400;
+  const thinkMs = { '10': 200, '25': 300, '50': 450, '100': 600, '250': 800, '500': 1000, '1000': 1200 }[currentDifficulty] || 400;
   await new Promise(r => setTimeout(r, thinkMs));
 
   if (!gameActive || currentTurn !== aiInternal) return;
@@ -2571,6 +2600,8 @@ function checkGameOver() {
         SoundFX.gameDraw(); 
         window.saveStats('draw');
       }
+      
+      if (window.showAuthPromoIfGuest) window.showAuthPromoIfGuest();
     }
     
     const isReplayMode = new URLSearchParams(window.location.search).has('replay');
@@ -2599,6 +2630,7 @@ function updateHint() {
 
 function updateStatus(msg, kind = 'default') {
   const el = document.getElementById('statusMessage');
+  
   el.innerHTML = '';
   const dot = document.createElement('span');
   dot.className = 'status-dot';
@@ -2839,9 +2871,9 @@ window.onload = () => {
     btn.disabled = true;
     try {
       await signOut(auth);
-      window.gameStats = { w: 0, l: 0, d: 0 };
+      window.gameStats = { w: 0, l: 0, d: 0, score: 0 };
       window.SafeStorage.set('zc_stats', JSON.stringify(window.gameStats));
-      window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: null, stats: { w: 0, l: 0, d: 0 } }));
+      window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: null, stats: { w: 0, l: 0, d: 0, score: 0 } }));
       if (window.updateStatsUI) window.updateStatsUI();
       logoutModal.classList.remove('open');
       
@@ -2969,9 +3001,9 @@ window.onload = () => {
     if (nameInput) nameInput.value = dName;
     if (window.renderAvatarGrid) window.renderAvatarGrid(dAv, !user.isAnonymous ? user.photoURL : null);
 
-    let fsStats = fsData.stats || { w: 0, l: 0, d: 0 };
-    const localStats = window.gameStats || { w: 0, l: 0, d: 0 };
-    let baseline = { w: 0, l: 0, d: 0 };
+    let fsStats = fsData.stats || { w: 0, l: 0, d: 0, score: 0 };
+    const localStats = window.gameStats || { w: 0, l: 0, d: 0, score: 0 };
+    let baseline = { w: 0, l: 0, d: 0, score: 0 };
     
     try {
       const raw = window.SafeStorage.get('zc_stats_baseline', null);
@@ -2982,15 +3014,17 @@ window.onload = () => {
     } catch (e) {}
 
     const delta = {
-      w: Math.max(0, localStats.w - baseline.w),
-      l: Math.max(0, localStats.l - baseline.l),
-      d: Math.max(0, localStats.d - baseline.d)
+      w: Math.max(0, (localStats.w || 0) - (baseline.w || 0)),
+      l: Math.max(0, (localStats.l || 0) - (baseline.l || 0)),
+      d: Math.max(0, (localStats.d || 0) - (baseline.d || 0)),
+      score: (localStats.score || 0) - (baseline.score || 0)
     };
 
     const merged = {
-      w: fsStats.w + delta.w,
-      l: fsStats.l + delta.l,
-      d: fsStats.d + delta.d
+      w: (fsStats.w || 0) + delta.w,
+      l: (fsStats.l || 0) + delta.l,
+      d: (fsStats.d || 0) + delta.d,
+      score: Math.max(0, (fsStats.score || 0) + delta.score)
     };
 
     window.gameStats = merged;
@@ -3047,13 +3081,14 @@ window.onload = () => {
     }
   };
 
-  // --- LEADERBOARD LOGIC ---
+  // --- LEADERBOARD LOGIC (NOW USING ZEROSCORE) ---
   window.fetchLeaderboard = async () => {
     const list = document.getElementById('leaderboardList');
     list.innerHTML = '<div class="text-center py-8 text-[var(--chalk-dim)] mono text-sm">Fetching from secure DB...</div>';
     
     try {
-      const q = query(collection(db, "users"), orderBy("stats.w", "desc"), limit(10));
+      // Query top 10 users ranked by the new XP Score logic
+      const q = query(collection(db, "users"), orderBy("stats.score", "desc"), limit(10));
       const snapshot = await getDocs(q);
       
       if (snapshot.empty) {
@@ -3066,7 +3101,14 @@ window.onload = () => {
       
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        const wins = data.stats ? data.stats.w : 0;
+        // Fallback calculation for older accounts that haven't saved a new 'score' property yet
+        let xpScore = 0;
+        if (data.stats && data.stats.score !== undefined) {
+           xpScore = data.stats.score;
+        } else if (data.stats && data.stats.w) {
+           xpScore = data.stats.w * 10;
+        }
+        
         const name = data.displayName || `Guest-${docSnap.id.substring(0, 4)}`;
         const avatar = data.photoURL || `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${docSnap.id}`;
         
@@ -3083,7 +3125,7 @@ window.onload = () => {
               <span class="font-bold text-sm truncate max-w-[140px]" style="color: var(--chalk);">${name}</span>
             </div>
             <div class="text-right flex-shrink-0">
-              <span class="block font-bold mono text-[var(--chalk-pink)]">${wins} W</span>
+              <span class="block font-bold mono text-[var(--chalk-yellow)]">${xpScore} XP</span>
             </div>
           </div>
         `;
