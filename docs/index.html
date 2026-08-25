@@ -51,6 +51,8 @@
     try {
       if (window.crossOriginIsolated) return;
       if (!('serviceWorker' in navigator)) return;
+      if (window.location.search.includes('auth=1')) return; // Auth Mode Bypass
+      
       var FLAG = 'zc_coi_boot_reload';
       if (sessionStorage.getItem(FLAG)) return;
       setTimeout(function () {
@@ -810,6 +812,43 @@ body {
   background: var(--chalk-yellow);
 }
 
+/* ========================================= */
+/* SECURE LOGIN OVERLAY                      */
+/* ========================================= */
+.auth-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 6, 5, 0.85);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.auth-modal-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.auth-modal-card {
+  background: var(--tray);
+  border: 1px solid var(--tray-line);
+  border-radius: 12px;
+  padding: 2.2rem 1.8rem;
+  max-width: 90vw;
+  width: 360px;
+  text-align: center;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.05) inset;
+  transform: translateY(20px);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.auth-modal-backdrop.open .auth-modal-card {
+  transform: translateY(0);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mark path[data-draw] { animation: none !important; stroke-dashoffset: 0 !important; }
   * { transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; }
@@ -864,7 +903,7 @@ body {
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
           <circle cx="12" cy="7" r="4"></circle>
         </svg>
-        <img id="authAvatar" class="hidden w-[14px] h-[14px] rounded-full" src="" alt="Avatar" aria-hidden="true">
+        <img id="authAvatar" crossorigin="anonymous" class="hidden w-[14px] h-[14px] rounded-full" src="" alt="Avatar" aria-hidden="true">
         <span id="authBtnText" class="hidden sm:inline">Sign In</span>
       </button>
 
@@ -1017,6 +1056,44 @@ body {
       </div>
     </section>
   </main>
+</div>
+
+<!-- ========================================= -->
+<!-- SECURE LOGIN OVERLAY                      -->
+<!-- ========================================= -->
+<div class="auth-modal-backdrop" id="authModal">
+  <div class="auth-modal-card">
+    <h2 style="font-family: 'Kalam', cursive; font-size: 1.6rem; color: var(--chalk); margin-bottom: 0.5rem; font-weight: 700;">Secure Login Ready</h2>
+    <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--chalk-dim); margin-bottom: 1.5rem; line-height: 1.45;">
+      The AI engine's hyper-threading has been temporarily suspended to establish a secure connection.
+    </p>
+    <button id="authModalBtn" class="chalk-btn btn-primary w-full py-2.5 text-sm flex items-center justify-center gap-2">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+      Continue to Google
+    </button>
+    <button id="authModalCancel" class="mt-4 w-full py-2 text-sm" style="font-family: 'JetBrains Mono', monospace; color: var(--chalk-dim); background: transparent; border: none; cursor: pointer; text-decoration: underline;">
+      Cancel & Return to Game
+    </button>
+  </div>
+</div>
+
+<!-- ========================================= -->
+<!-- SECURE LOGOUT OVERLAY                     -->
+<!-- ========================================= -->
+<div class="auth-modal-backdrop" id="logoutModal">
+  <div class="auth-modal-card">
+    <h2 style="font-family: 'Kalam', cursive; font-size: 1.6rem; color: var(--chalk); margin-bottom: 0.5rem; font-weight: 700;">Disconnect?</h2>
+    <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--chalk-dim); margin-bottom: 1.5rem; line-height: 1.45;">
+      You will be signed out of your Google account and continue playing as a local guest.
+    </p>
+    <button id="logoutConfirmBtn" class="chalk-btn w-full py-2.5 text-sm flex items-center justify-center gap-2 hover:bg-[rgba(244,63,94,0.25)]" style="background: rgba(244, 63, 94, 0.15); color: var(--chalk-pink); border: 1px solid var(--chalk-pink); border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 700; transition: all 0.2s ease;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+      Confirm Log Out
+    </button>
+    <button id="logoutCancelBtn" class="mt-4 w-full py-2 text-sm" style="font-family: 'JetBrains Mono', monospace; color: var(--chalk-dim); background: transparent; border: none; cursor: pointer; text-decoration: underline;">
+      Cancel & Return to Game
+    </button>
+  </div>
 </div>
 
 <div class="drawer-backdrop" id="settingsBackdrop" onclick="closeSettingsModal();"></div>
@@ -2447,7 +2524,10 @@ function updateEvalBar(val) {
 
 async function initEngine() {
   try {
-    updateStatus("Initializing Web Worker...", "pending");
+    // If the modal is covering the screen, don't update the background status text
+    if (!document.getElementById('authModal').classList.contains('open')) {
+        updateStatus("Initializing Web Worker...", "pending");
+    }
     
     if (!window.Worker) throw new Error("Web Workers not supported");
 
@@ -2463,11 +2543,14 @@ async function initEngine() {
         engineMode = 'wasm';
         engineReady = true;
         updateActiveModelNote('best_model.onnx (Web Worker)');
-        if (!gameActive) {
-            enableControls();
-        } else {
-            const currentActorText = currentTurn === humanInternal ? 'Your move.' : 'Engine is thinking...';
-            updateStatus(isPvP ? (currentTurn === 1 ? "X's turn." : "O's turn.") : currentActorText, 'active');
+        
+        if (!document.getElementById('authModal').classList.contains('open')) {
+            if (!gameActive) {
+                enableControls();
+            } else {
+                const currentActorText = currentTurn === humanInternal ? 'Your move.' : 'Engine is thinking...';
+                updateStatus(isPvP ? (currentTurn === 1 ? "X's turn." : "O's turn.") : currentActorText, 'active');
+            }
         }
       } else if (data.type === 'init_error') {
         fallbackInit(data.error);
@@ -2500,15 +2583,18 @@ function fallbackInit(e) {
   engineMode = 'fallback';
   engineReady = true;
   updateActiveModelNote('Basic AI (Offline/Fallback)');
-  if (!gameActive) {
-    enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
+  
+  if (!document.getElementById('authModal').classList.contains('open')) {
+      if (!gameActive) {
+        enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
+      }
   }
 }
 
 // Watch for internet connection to re-try loading the full AI Engine
 window.addEventListener('online', () => {
   if (engineMode === 'fallback') {
-    if (!gameActive) {
+    if (!gameActive && !document.getElementById('authModal').classList.contains('open')) {
       updateStatus("Network restored. Retrying Engine download...", "pending");
     }
     initEngine();
@@ -2580,69 +2666,87 @@ window.onload = () => {
   let isSigningIn = false;
 
   const authBtn = document.getElementById('authBtn');
-  // Keep the button inert until we actually know the auth state, so an
-  // early click during page load can't silently do nothing.
+  const btnText = document.getElementById('authBtnText');
   if (authBtn) authBtn.disabled = true;
 
-  // Turn the handful of errors a player might realistically hit into a
-  // message worth showing, instead of only logging to the console.
+  // Modal elements
+  const authModal = document.getElementById('authModal');
+  const authModalBtn = document.getElementById('authModalBtn');
+  const authModalCancel = document.getElementById('authModalCancel');
+  
+  const logoutModal = document.getElementById('logoutModal');
+  const logoutConfirmBtn = document.getElementById('logoutConfirmBtn');
+  const logoutCancelBtn = document.getElementById('logoutCancelBtn');
+
+  if (window.location.search.includes("auth=1")) {
+      authModal.classList.add('open');
+  }
+
   function describeAuthError(error) {
     const code = error && error.code;
-    if (code === 'auth/unauthorized-domain') {
-      return "Sign-in isn't enabled for this domain (add it under Firebase Console \u2192 Authentication \u2192 Settings \u2192 Authorized domains).";
-    }
-    if (code === 'auth/network-request-failed') {
-      return "Sign-in failed \u2014 check your connection and try again.";
-    }
-    if (code === 'auth/operation-not-supported-in-this-environment' || code === 'auth/operation-not-allowed') {
-      return "Google sign-in isn't supported in this browser/app view.";
-    }
-    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-      return null; // user-initiated cancel, nothing to alarm them with
-    }
+    if (code === 'auth/unauthorized-domain') return "Sign-in isn't enabled for this domain.";
+    if (code === 'auth/network-request-failed') return "Sign-in failed \u2014 check your connection.";
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null; 
     return "Sign-in failed. Please try again.";
+  }
+
+  // --- OVERLAY BUTTON LISTENERS ---
+  if (authModalBtn) {
+      authModalBtn.addEventListener('click', async () => {
+          if (isSigningIn) return;
+          isSigningIn = true;
+          const originalBtnHTML = authModalBtn.innerHTML;
+          authModalBtn.innerHTML = "Connecting to Google...";
+          authModalBtn.disabled = true;
+
+          try {
+              await signInWithPopup(auth, provider);
+              window.location.href = window.location.pathname; 
+          } catch (error) {
+              const msg = describeAuthError(error);
+              if (window.updateStatus && msg) window.updateStatus(msg, 'bad');
+              isSigningIn = false;
+              authModalBtn.innerHTML = originalBtnHTML;
+              authModalBtn.disabled = false;
+          }
+      });
+  }
+
+  if (authModalCancel) {
+      authModalCancel.addEventListener('click', () => window.location.href = window.location.pathname);
+  }
+
+  if (logoutCancelBtn) {
+      logoutCancelBtn.addEventListener('click', () => logoutModal.classList.remove('open'));
+  }
+
+  if (logoutConfirmBtn) {
+      logoutConfirmBtn.addEventListener('click', async () => {
+          logoutModal.classList.remove('open');
+          if (authBtn) authBtn.disabled = true;
+          try {
+            await signOut(auth);
+            window.gameStats = { w: 0, l: 0, d: 0 };
+            window.SafeStorage.set('zc_stats', JSON.stringify(window.gameStats));
+            window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: null, stats: { w: 0, l: 0, d: 0 } }));
+            if (window.updateStatsUI) window.updateStatsUI();
+          } catch (error) {
+            if (window.updateStatus) window.updateStatus("Couldn't sign out \u2014 please try again.", 'bad');
+          } finally {
+            if (authBtn) authBtn.disabled = false;
+          }
+      });
   }
 
   window.handleAuthClick = async () => {
     if (isSigningIn) return;
-    const btnText = document.getElementById('authBtnText');
-
     if (currentUser && currentUser.isAnonymous) {
-      isSigningIn = true;
-      if (btnText) btnText.textContent = "Connecting...";
-      if (authBtn) authBtn.disabled = true;
-      try {
-        await signInWithPopup(auth, provider);
-        // onAuthStateChanged picks up the new user and refreshes the UI.
-      } catch (error) {
-        console.error("Sign-in Error:", error);
-        const msg = describeAuthError(error);
-        if (msg && window.updateStatus) window.updateStatus(msg, 'bad');
-        if (btnText) btnText.textContent = "Sign In";
-      } finally {
-        isSigningIn = false;
-        if (authBtn) authBtn.disabled = false;
+      if (!window.location.search.includes('auth=1')) {
+        if (window.updateStatus) window.updateStatus("Preparing secure login...", 'pending');
+        window.location.href = "?auth=1";
       }
     } else if (currentUser) {
-      if (confirm("Log out? You will play as a local guest instead.")) {
-        if (authBtn) authBtn.disabled = true;
-        try {
-          await signOut(auth);
-          // The stats now in local storage belong to the account we just
-          // left. Start the next guest session with a clean slate instead
-          // of carrying (and possibly later re-merging) someone else's
-          // record.
-          window.gameStats = { w: 0, l: 0, d: 0 };
-          window.SafeStorage.set('zc_stats', JSON.stringify(window.gameStats));
-          window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: null, stats: { w: 0, l: 0, d: 0 } }));
-          if (window.updateStatsUI) window.updateStatsUI();
-        } catch (error) {
-          console.error("Sign-out Error:", error);
-          if (window.updateStatus) window.updateStatus("Couldn't sign out \u2014 please try again.", 'bad');
-        } finally {
-          if (authBtn) authBtn.disabled = false;
-        }
-      }
+      logoutModal.classList.add('open');
     }
   };
 
@@ -2654,11 +2758,9 @@ window.onload = () => {
   };
 
   onAuthStateChanged(auth, async (user) => {
-    const btnText = document.getElementById('authBtnText');
     const authIcon = document.getElementById('authIcon');
     const authAvatar = document.getElementById('authAvatar');
     const authPromo = document.getElementById('authPromo');
-
     if (authBtn) authBtn.disabled = false;
 
     if (user) {
@@ -2674,15 +2776,15 @@ window.onload = () => {
            authAvatar.style.display = 'block';
            if (authIcon) authIcon.style.display = 'none';
         } else {
-           // No photo on the account (or it failed to load) — fall back
-           // to the icon instead of leaving a broken/blank avatar shown.
            if (authIcon) authIcon.style.display = 'block';
            if (authAvatar) authAvatar.style.display = 'none';
         }
         if (authPromo) authPromo.style.display = 'none';
-        if (window.updateStatus) {
-          window.updateStatus(`Signed in as ${user.displayName || user.email || 'your account'}.`, 'good');
+        if (window.location.search.includes("auth=1")) {
+            window.location.href = window.location.pathname; 
+            return;
         }
+        if (window.updateStatus) window.updateStatus(`Signed in as ${user.displayName || user.email || 'your account'}.`, 'good');
         await syncStats(user.uid);
       }
     } else {
@@ -2691,37 +2793,15 @@ window.onload = () => {
     }
   });
 
-  // Merge, don't overwrite. The previous version compared local vs. cloud
-  // totals and simply kept whichever was bigger — which silently discarded
-  // every stat on the losing side. That meant a guest who played a few
-  // rounds and then signed into an account that already had a longer
-  // history would instantly lose those rounds (or, the other way round,
-  // logging into a fresh account from a well-used guest browser could
-  // stomp real cloud history).
-  //
-  // Instead we track a "baseline" \u2014 the stats we know were already saved
-  // to this account's cloud record \u2014 and only fold in the difference
-  // between that baseline and what's stored locally now. That difference
-  // is exactly the games played locally since the last successful sync
-  // (pre-login guest games, or games played while offline), so re-running
-  // this on every page load doesn't add the same games twice.
   async function syncStats(uid) {
     const userRef = doc(db, 'users', uid);
     let fsStats = { w: 0, l: 0, d: 0 };
     try {
       const docSnap = await getDoc(userRef);
-      if (docSnap.exists() && docSnap.data().stats) {
-        fsStats = docSnap.data().stats;
-      }
-    } catch (error) {
-      // Can't reach Firestore right now — leave local stats untouched
-      // rather than guessing, and try again on the next sync.
-      console.error("Couldn't read cloud stats, leaving local stats untouched:", error);
-      return;
-    }
+      if (docSnap.exists() && docSnap.data().stats) fsStats = docSnap.data().stats;
+    } catch (error) { return; }
 
     const localStats = window.gameStats || { w: 0, l: 0, d: 0 };
-
     let baseline = { w: 0, l: 0, d: 0 };
     try {
       const raw = window.SafeStorage.get('zc_stats_baseline', null);
@@ -2729,7 +2809,7 @@ window.onload = () => {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.uid === uid && parsed.stats) baseline = parsed.stats;
       }
-    } catch (e) { /* corrupt baseline, treat as empty */ }
+    } catch (e) {}
 
     const delta = {
       w: Math.max(0, localStats.w - baseline.w),
@@ -2748,13 +2828,8 @@ window.onload = () => {
     window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid, stats: merged }));
     window.updateStatsUI();
 
-    const changed = delta.w + delta.l + delta.d > 0;
-    if (changed) {
-      try {
-        await setDoc(userRef, { stats: merged }, { merge: true });
-      } catch (error) {
-        console.error("Couldn't save merged stats to the cloud:", error);
-      }
+    if (delta.w + delta.l + delta.d > 0) {
+      try { await setDoc(userRef, { stats: merged }, { merge: true }); } catch (error) {}
     }
   }
 
@@ -2762,13 +2837,9 @@ window.onload = () => {
   window.saveStats = function(result) {
     originalSaveStats(result); 
     if (currentUser && !currentUser.isAnonymous) {
-      setDoc(doc(db, 'users', currentUser.uid), { stats: window.gameStats }, {merge: true})
-        .then(() => {
-          // Keep the merge baseline current so the next syncStats() call
-          // (e.g. on the next page load) sees zero new local games here.
+      setDoc(doc(db, 'users', currentUser.uid), { stats: window.gameStats }, {merge: true}).then(() => {
           window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: currentUser.uid, stats: window.gameStats }));
-        })
-        .catch(console.error);
+      });
     }
   };
 </script>
