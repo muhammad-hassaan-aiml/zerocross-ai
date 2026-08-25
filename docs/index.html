@@ -2784,6 +2784,15 @@ window.onload = () => {
 
   scheduleReveal();
 };
+
+// Register PWA Service Worker
+if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then((reg) => console.log('PWA ServiceWorker registered successfully:', reg.scope))
+      .catch((err) => console.log('PWA ServiceWorker registration failed:', err));
+  });
+}
 </script>
 
 <!-- Firebase Authentication and Database Sync Core -->
