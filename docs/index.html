@@ -592,8 +592,8 @@ body {
 }
 .icon-btn:hover:not(:disabled) { color: var(--chalk); border-color: var(--chalk-dim); background: rgba(0, 0, 0, 0.32); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); }
 .icon-btn svg { transition: transform 0.4s ease; flex-shrink: 0; }
-.icon-btn:hover:not(:disabled):not(.sound-btn):not(.history-action):not(.auth-btn) svg { transform: rotate(45deg); }
-.icon-btn.sound-btn:hover svg, .icon-btn.auth-btn:hover svg { transform: none; }
+.icon-btn:hover:not(:disabled):not(.sound-btn):not(.history-action):not(.auth-btn):not(.rank-btn) svg { transform: rotate(45deg); }
+.icon-btn.sound-btn:hover svg, .icon-btn.auth-btn:hover svg, .icon-btn.rank-btn:hover svg { transform: none; }
 .icon-btn.sound-btn.muted { color: var(--ink-red); }
 
 .active-model-note {
@@ -897,7 +897,7 @@ body {
     </div>
     <div class="flex items-center gap-1.5 flex-shrink-0">
       
-      <!-- Added Authentication Header Button -->
+      <!-- Authentication Header Button -->
       <button type="button" class="icon-btn auth-btn" id="authBtn" onclick="handleAuthClick()" aria-label="Sign In">
         <svg id="authIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -905,6 +905,19 @@ body {
         </svg>
         <img id="authAvatar" crossorigin="anonymous" class="hidden w-[14px] h-[14px] rounded-full" src="" alt="Avatar" aria-hidden="true">
         <span id="authBtnText" class="hidden sm:inline">Sign In</span>
+      </button>
+
+      <!-- Leaderboard Button -->
+      <button type="button" class="icon-btn rank-btn" id="leaderboardBtn" onclick="openLeaderboard()" aria-label="Global Rankings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
+          <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
+          <path d="M4 22h16"></path>
+          <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path>
+          <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path>
+          <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path>
+        </svg>
+        <span class="hidden sm:inline">Rankings</span>
       </button>
 
       <button type="button" class="icon-btn sound-btn" id="soundBtn" onclick="toggleSound()" aria-pressed="true" aria-label="Toggle sound effects">
@@ -1038,7 +1051,6 @@ body {
           </span>
         </button>
 
-        <!-- Added Post-Game Call to Action for Guests -->
         <div id="authPromo" style="display:none;" class="mt-2 tray-panel text-center pb-2 pt-3 px-3">
           <p class="eyebrow mb-2">Save Your Record</p>
           <button onclick="handleAuthClick()" class="chalk-btn side-btn side-btn-y w-full flex items-center justify-center gap-2" style="padding: 0.4rem;">
@@ -1067,11 +1079,14 @@ body {
     <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--chalk-dim); margin-bottom: 1.5rem; line-height: 1.45;">
       The AI engine's hyper-threading has been temporarily suspended to establish a secure connection.
     </p>
-    <button id="authModalBtn" class="chalk-btn btn-primary w-full py-2.5 text-sm flex items-center justify-center gap-2">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-      Continue to Google
+    
+    <!-- STRICT INLINE ONCLICK FOR BULLETPROOF POPUP -->
+    <button id="authModalBtn" onclick="executeGoogleLogin()" class="chalk-btn btn-primary w-full py-2.5 text-sm flex items-center justify-center gap-2" style="transition: all 0.2s ease;">
+      <svg style="pointer-events:none;" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+      <span id="authModalBtnText" style="pointer-events:none;">Continue to Google</span>
     </button>
-    <button id="authModalCancel" class="mt-4 w-full py-2 text-sm" style="font-family: 'JetBrains Mono', monospace; color: var(--chalk-dim); background: transparent; border: none; cursor: pointer; text-decoration: underline;">
+    
+    <button id="authModalCancel" onclick="window.location.href = window.location.pathname;" class="mt-4 w-full py-2 text-sm" style="font-family: 'JetBrains Mono', monospace; color: var(--chalk-dim); background: transparent; border: none; cursor: pointer; text-decoration: underline;">
       Cancel & Return to Game
     </button>
   </div>
@@ -1086,17 +1101,21 @@ body {
     <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--chalk-dim); margin-bottom: 1.5rem; line-height: 1.45;">
       You will be signed out of your Google account and continue playing as a local guest.
     </p>
-    <button id="logoutConfirmBtn" class="chalk-btn w-full py-2.5 text-sm flex items-center justify-center gap-2 hover:bg-[rgba(244,63,94,0.25)]" style="background: rgba(244, 63, 94, 0.15); color: var(--chalk-pink); border: 1px solid var(--chalk-pink); border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 700; transition: all 0.2s ease;">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-      Confirm Log Out
+    <button id="logoutConfirmBtn" onclick="executeLogout()" class="chalk-btn w-full py-2.5 text-sm flex items-center justify-center gap-2 hover:bg-[rgba(244,63,94,0.25)]" style="background: rgba(244, 63, 94, 0.15); color: var(--chalk-pink); border: 1px solid var(--chalk-pink); border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 700; transition: all 0.2s ease;">
+      <svg style="pointer-events:none;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+      <span id="logoutBtnText" style="pointer-events:none;">Confirm Log Out</span>
     </button>
-    <button id="logoutCancelBtn" class="mt-4 w-full py-2 text-sm" style="font-family: 'JetBrains Mono', monospace; color: var(--chalk-dim); background: transparent; border: none; cursor: pointer; text-decoration: underline;">
+    <button id="logoutCancelBtn" onclick="document.getElementById('logoutModal').classList.remove('open');" class="mt-4 w-full py-2 text-sm" style="font-family: 'JetBrains Mono', monospace; color: var(--chalk-dim); background: transparent; border: none; cursor: pointer; text-decoration: underline;">
       Cancel & Return to Game
     </button>
   </div>
 </div>
 
-<div class="drawer-backdrop" id="settingsBackdrop" onclick="closeSettingsModal();"></div>
+<!-- ========================================= -->
+<!-- LEADERBOARD & SETTINGS DRAWERS            -->
+<!-- ========================================= -->
+<div class="drawer-backdrop" id="settingsBackdrop" onclick="closeAnyDrawer();"></div>
+
 <div class="settings-drawer" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
   <div class="drawer-header">
     <h2 id="settingsModalTitle">Settings</h2>
@@ -1105,6 +1124,19 @@ body {
     </button>
   </div>
   <div class="drawer-body">
+    <!-- NEW: PLAYER PROFILE SECTION -->
+    <div class="drawer-section">
+      <span class="eyebrow block mb-2">Player Profile</span>
+      <div style="background: rgba(0,0,0,0.15); border: 1px solid var(--tray-line); border-radius: 8px; padding: 0.8rem;">
+        <input type="text" id="profileNameInput" class="native-select mb-3" style="background: rgba(0,0,0,0.3); border-color: var(--tray-line);" placeholder="Your Username" maxlength="15">
+        <span class="eyebrow block mb-2">Avatar</span>
+        <div class="flex gap-2 mb-3 overflow-x-auto pb-1" id="avatarGrid" style="scrollbar-width: none;">
+          <!-- Avatars populated here via JS -->
+        </div>
+        <button type="button" id="saveProfileBtn" onclick="saveProfile()" class="chalk-btn side-btn side-btn-y w-full">Save Profile</button>
+      </div>
+    </div>
+
     <div class="drawer-section">
       <span class="eyebrow block mb-2">Engine Difficulty</span>
       <div class="select-wrap">
@@ -1127,6 +1159,20 @@ body {
         <span>Sound effects</span>
         <span class="toggle-switch on" id="soundSwitch"><span class="toggle-knob"></span></span>
       </button>
+    </div>
+  </div>
+</div>
+
+<div class="settings-drawer" id="leaderboardDrawer" role="dialog" aria-modal="true" aria-labelledby="leaderboardTitle">
+  <div class="drawer-header">
+    <h2 id="leaderboardTitle">Global Top 10</h2>
+    <button type="button" class="modal-close-btn" onclick="closeLeaderboard()" aria-label="Close leaderboard">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body" id="leaderboardList">
+    <div class="text-center py-8 text-[var(--chalk-dim)] mono text-sm">
+      Loading rankings...
     </div>
   </div>
 </div>
@@ -1189,6 +1235,7 @@ function loadGameStats() {
 
 let gameStats = loadGameStats();
 window.gameStats = gameStats;
+window.playerProfile = { displayName: '', photoURL: '' };
 
 let cellElems = new Array(81);
 let macroElems = new Array(9);
@@ -1446,7 +1493,7 @@ let settingsTriggerElem = null;
 
 function getSettingsFocusable() {
   return Array.from(document.querySelectorAll(
-    '#settingsModal button, #settingsModal select, #settingsModal [href], #settingsModal [tabindex]:not([tabindex="-1"])'
+    '#settingsModal button, #settingsModal input, #settingsModal select, #settingsModal [href], #settingsModal [tabindex]:not([tabindex="-1"])'
   ));
 }
 
@@ -1470,7 +1517,7 @@ function openSettingsModal() {
   document.getElementById('settingsBackdrop').classList.add('open');
   document.getElementById('settingsModal').classList.add('open');
   SoundFX.drawerOpen();
-  document.querySelector('.modal-close-btn')?.focus();
+  document.querySelector('#settingsModal .modal-close-btn')?.focus();
   document.addEventListener('keydown', trapSettingsFocus);
 }
 
@@ -1486,10 +1533,26 @@ function closeSettingsModal() {
   settingsTriggerElem = null;
 }
 
+function openLeaderboard() {
+  document.getElementById('settingsBackdrop').classList.add('open');
+  document.getElementById('leaderboardDrawer').classList.add('open');
+  SoundFX.drawerOpen();
+  if (window.fetchLeaderboard) window.fetchLeaderboard();
+}
+
+function closeLeaderboard() {
+  document.getElementById('settingsBackdrop').classList.remove('open');
+  document.getElementById('leaderboardDrawer').classList.remove('open');
+  SoundFX.drawerClose();
+}
+
+function closeAnyDrawer() {
+  if (document.getElementById('settingsModal').classList.contains('open')) closeSettingsModal();
+  if (document.getElementById('leaderboardDrawer').classList.contains('open')) closeLeaderboard();
+}
+
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && document.getElementById('settingsModal').classList.contains('open')) {
-    closeSettingsModal();
-  }
+  if (e.key === 'Escape') closeAnyDrawer();
 });
 
 let mobileSheetCollapsed = false;
@@ -1984,6 +2047,8 @@ function resetGame() {
     } else {
       enableControls();
     }
+  } else {
+    updateStatus("Downloading AI Engine (~15MB)...", "pending");
   }
   document.getElementById('rosterRow').style.display = 'none';
   document.getElementById('statsRow').style.display = 'none';
@@ -2486,6 +2551,10 @@ function updateHint() {
 
 function updateStatus(msg, kind = 'default') {
   const el = document.getElementById('statusMessage');
+  
+  // Do not overwrite downloading state with "Ready"
+  if (el.textContent.includes("Downloading AI Engine") && msg.includes("Ready")) return;
+
   el.innerHTML = '';
   const dot = document.createElement('span');
   dot.className = 'status-dot';
@@ -2524,9 +2593,8 @@ function updateEvalBar(val) {
 
 async function initEngine() {
   try {
-    // If the modal is covering the screen, don't update the background status text
-    if (!document.getElementById('authModal').classList.contains('open')) {
-        updateStatus("Initializing Web Worker...", "pending");
+    if (!document.getElementById('authModal').classList.contains('open') && !document.getElementById('logoutModal').classList.contains('open')) {
+        updateStatus("Downloading AI Engine (~15MB)...", "pending");
     }
     
     if (!window.Worker) throw new Error("Web Workers not supported");
@@ -2544,7 +2612,7 @@ async function initEngine() {
         engineReady = true;
         updateActiveModelNote('best_model.onnx (Web Worker)');
         
-        if (!document.getElementById('authModal').classList.contains('open')) {
+        if (!document.getElementById('authModal').classList.contains('open') && !document.getElementById('logoutModal').classList.contains('open')) {
             if (!gameActive) {
                 enableControls();
             } else {
@@ -2584,7 +2652,7 @@ function fallbackInit(e) {
   engineReady = true;
   updateActiveModelNote('Basic AI (Offline/Fallback)');
   
-  if (!document.getElementById('authModal').classList.contains('open')) {
+  if (!document.getElementById('authModal').classList.contains('open') && !document.getElementById('logoutModal').classList.contains('open')) {
       if (!gameActive) {
         enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
       }
@@ -2594,7 +2662,7 @@ function fallbackInit(e) {
 // Watch for internet connection to re-try loading the full AI Engine
 window.addEventListener('online', () => {
   if (engineMode === 'fallback') {
-    if (!gameActive && !document.getElementById('authModal').classList.contains('open')) {
+    if (!gameActive && !document.getElementById('authModal').classList.contains('open') && !document.getElementById('logoutModal').classList.contains('open')) {
       updateStatus("Network restored. Retrying Engine download...", "pending");
     }
     initEngine();
@@ -2645,7 +2713,7 @@ window.onload = () => {
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, getDoc, collection, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCeoJvlbABPrnxPY_N8rL_bx0yrE4VrWQs",
@@ -2671,11 +2739,8 @@ window.onload = () => {
 
   // Modal elements
   const authModal = document.getElementById('authModal');
-  const authModalBtn = document.getElementById('authModalBtn');
   const authModalCancel = document.getElementById('authModalCancel');
-  
   const logoutModal = document.getElementById('logoutModal');
-  const logoutConfirmBtn = document.getElementById('logoutConfirmBtn');
   const logoutCancelBtn = document.getElementById('logoutCancelBtn');
 
   if (window.location.search.includes("auth=1")) {
@@ -2684,33 +2749,64 @@ window.onload = () => {
 
   function describeAuthError(error) {
     const code = error && error.code;
+    if (code === 'auth/popup-blocked') return "Popup blocked! Allow popups for this site.";
     if (code === 'auth/unauthorized-domain') return "Sign-in isn't enabled for this domain.";
     if (code === 'auth/network-request-failed') return "Sign-in failed \u2014 check your connection.";
     if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null; 
     return "Sign-in failed. Please try again.";
   }
 
-  // --- OVERLAY BUTTON LISTENERS ---
-  if (authModalBtn) {
-      authModalBtn.addEventListener('click', async () => {
-          if (isSigningIn) return;
-          isSigningIn = true;
-          const originalBtnHTML = authModalBtn.innerHTML;
-          authModalBtn.innerHTML = "Connecting to Google...";
-          authModalBtn.disabled = true;
+  window.executeGoogleLogin = async () => {
+      if (isSigningIn) return;
+      isSigningIn = true;
+      const btn = document.getElementById('authModalBtn');
+      const btnTextElement = document.getElementById('authModalBtnText');
+      const originalBtnHTML = btn.innerHTML;
+      
+      btnTextElement.textContent = "Connecting to Google...";
+      btn.disabled = true;
+      btn.style.opacity = "0.7";
 
-          try {
-              await signInWithPopup(auth, provider);
-              window.location.href = window.location.pathname; 
-          } catch (error) {
-              const msg = describeAuthError(error);
-              if (window.updateStatus && msg) window.updateStatus(msg, 'bad');
-              isSigningIn = false;
-              authModalBtn.innerHTML = originalBtnHTML;
-              authModalBtn.disabled = false;
+      try {
+          await signInWithPopup(auth, provider);
+          window.location.href = window.location.pathname; 
+      } catch (error) {
+          console.error("Popup Auth Error:", error);
+          const msg = describeAuthError(error);
+          
+          if (msg) {
+              btn.innerHTML = `<span style="color:var(--ink-red); font-weight:bold;">${msg}</span>`;
+              btn.style.borderColor = "var(--ink-red)";
+              if (window.updateStatus) window.updateStatus(msg, 'bad');
           }
-      });
-  }
+          
+          setTimeout(() => {
+              isSigningIn = false;
+              btn.innerHTML = originalBtnHTML;
+              btn.disabled = false;
+              btn.style.opacity = "1";
+              btn.style.borderColor = "";
+          }, 3500);
+      }
+  };
+
+  window.executeLogout = async () => {
+      const btn = document.getElementById('logoutConfirmBtn');
+      const originalHTML = btn.innerHTML;
+      btn.innerHTML = "Signing out...";
+      btn.disabled = true;
+      try {
+          await signOut(auth);
+          window.gameStats = { w: 0, l: 0, d: 0 };
+          window.SafeStorage.set('zc_stats', JSON.stringify(window.gameStats));
+          window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: null, stats: { w: 0, l: 0, d: 0 } }));
+          if (window.updateStatsUI) window.updateStatsUI();
+          logoutModal.classList.remove('open');
+      } catch (err) {
+          btn.innerHTML = "Failed. Try again.";
+          setTimeout(() => { btn.innerHTML = originalHTML; btn.disabled = false; }, 2000);
+      }
+  };
 
   if (authModalCancel) {
       authModalCancel.addEventListener('click', () => window.location.href = window.location.pathname);
@@ -2718,24 +2814,6 @@ window.onload = () => {
 
   if (logoutCancelBtn) {
       logoutCancelBtn.addEventListener('click', () => logoutModal.classList.remove('open'));
-  }
-
-  if (logoutConfirmBtn) {
-      logoutConfirmBtn.addEventListener('click', async () => {
-          logoutModal.classList.remove('open');
-          if (authBtn) authBtn.disabled = true;
-          try {
-            await signOut(auth);
-            window.gameStats = { w: 0, l: 0, d: 0 };
-            window.SafeStorage.set('zc_stats', JSON.stringify(window.gameStats));
-            window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: null, stats: { w: 0, l: 0, d: 0 } }));
-            if (window.updateStatsUI) window.updateStatsUI();
-          } catch (error) {
-            if (window.updateStatus) window.updateStatus("Couldn't sign out \u2014 please try again.", 'bad');
-          } finally {
-            if (authBtn) authBtn.disabled = false;
-          }
-      });
   }
 
   window.handleAuthClick = async () => {
@@ -2757,89 +2835,245 @@ window.onload = () => {
     }
   };
 
+  // --- AVATAR & PROFILE LOGIC ---
+  const presetSeeds = ['Mimi', 'Felix', 'Jack', 'Max', 'Luna'];
+  
+  window.renderAvatarGrid = (selectedAv, googleAv) => {
+      const grid = document.getElementById('avatarGrid');
+      if (!grid) return;
+      
+      let html = '';
+      const options = presetSeeds.map(s => `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${s}`);
+      
+      if (currentUser) options.unshift(`https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${currentUser.uid}`);
+      if (googleAv) options.unshift(googleAv);
+
+      const uniqueOptions = [...new Set(options)].slice(0, 6);
+      if (!uniqueOptions.includes(selectedAv)) uniqueOptions.unshift(selectedAv);
+
+      uniqueOptions.slice(0, 6).forEach(url => {
+          const isSelected = (url === selectedAv);
+          html += `
+              <button type="button" onclick="selectAvatar('${url}')" style="width: 42px; height: 42px; border-radius: 50%; border: 2px solid ${isSelected ? 'var(--chalk-yellow)' : 'transparent'}; overflow: hidden; flex-shrink: 0; background: var(--wood-dark); transition: border-color 0.2s; padding:0;">
+                  <img src="${url}" crossorigin="anonymous" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+              </button>
+          `;
+      });
+      grid.innerHTML = html;
+      window.selectedAvatarDraft = selectedAv;
+  };
+
+  window.selectAvatar = (url) => {
+      window.renderAvatarGrid(url, currentUser && !currentUser.isAnonymous ? currentUser.photoURL : null);
+  };
+
+  window.saveProfile = async () => {
+      const newName = document.getElementById('profileNameInput').value.trim();
+      if (!newName || !currentUser) return;
+      
+      const btn = document.getElementById('saveProfileBtn');
+      btn.textContent = "Saving...";
+      btn.disabled = true;
+
+      window.playerProfile.displayName = newName;
+      window.playerProfile.photoURL = window.selectedAvatarDraft;
+
+      document.getElementById('authBtnText').textContent = newName.split(' ')[0];
+      document.getElementById('authAvatar').src = window.selectedAvatarDraft;
+
+      try {
+          await setDoc(doc(db, 'users', currentUser.uid), {
+              displayName: newName,
+              photoURL: window.selectedAvatarDraft
+          }, { merge: true });
+          
+          btn.textContent = "Saved!";
+          btn.style.borderColor = "var(--chalk-yellow)";
+          btn.style.color = "var(--chalk-yellow)";
+          
+          setTimeout(() => {
+              btn.textContent = "Save Profile";
+              btn.className = "chalk-btn side-btn side-btn-y w-full"; 
+          }, 2000);
+          
+          if (document.getElementById('leaderboardDrawer').classList.contains('open')) {
+              window.fetchLeaderboard();
+          }
+      } catch (e) {
+          btn.textContent = "Error saving";
+      } finally {
+          btn.disabled = false;
+      }
+  };
+
+  async function syncProfileAndStats(uid, user) {
+      const userRef = doc(db, 'users', uid);
+      let fsData = {};
+      try {
+          const docSnap = await getDoc(userRef);
+          if (docSnap.exists()) fsData = docSnap.data();
+      } catch (error) {
+          console.error("Cloud fetch failed:", error);
+      }
+
+      let dName = fsData.displayName;
+      let dAv = fsData.photoURL;
+
+      if (!dName) dName = user.isAnonymous ? `Guest-${uid.substring(0, 4)}` : (user.displayName || `Player-${uid.substring(0,4)}`);
+      if (!dAv) dAv = user.isAnonymous ? `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${uid}` : (user.photoURL || `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${uid}`);
+
+      window.playerProfile = { displayName: dName, photoURL: dAv };
+
+      const btnTextElement = document.getElementById('authBtnText');
+      const authAvatar = document.getElementById('authAvatar');
+      const authIcon = document.getElementById('authIcon');
+      
+      if (btnTextElement) btnTextElement.textContent = dName.split(' ')[0];
+      if (authAvatar) {
+          authAvatar.src = dAv;
+          authAvatar.style.display = 'block';
+      }
+      if (authIcon) authIcon.style.display = 'none';
+
+      const nameInput = document.getElementById('profileNameInput');
+      if (nameInput) nameInput.value = dName;
+      if (window.renderAvatarGrid) window.renderAvatarGrid(dAv, !user.isAnonymous ? user.photoURL : null);
+
+      let fsStats = fsData.stats || { w: 0, l: 0, d: 0 };
+      const localStats = window.gameStats || { w: 0, l: 0, d: 0 };
+      let baseline = { w: 0, l: 0, d: 0 };
+      
+      try {
+          const raw = window.SafeStorage.get('zc_stats_baseline', null);
+          if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed && parsed.uid === uid && parsed.stats) baseline = parsed.stats;
+          }
+      } catch (e) {}
+
+      const delta = {
+          w: Math.max(0, localStats.w - baseline.w),
+          l: Math.max(0, localStats.l - baseline.l),
+          d: Math.max(0, localStats.d - baseline.d)
+      };
+
+      const merged = {
+          w: fsStats.w + delta.w,
+          l: fsStats.l + delta.l,
+          d: fsStats.d + delta.d
+      };
+
+      window.gameStats = merged;
+      window.SafeStorage.set('zc_stats', JSON.stringify(merged));
+      window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid, stats: merged }));
+      if (window.updateStatsUI) window.updateStatsUI();
+
+      try {
+          await setDoc(userRef, {
+              displayName: dName,
+              photoURL: dAv,
+              stats: merged
+          }, { merge: true });
+      } catch (error) {
+          console.error("Failed to save merged data to DB:", error);
+      }
+  }
+
   onAuthStateChanged(auth, async (user) => {
-    const authIcon = document.getElementById('authIcon');
-    const authAvatar = document.getElementById('authAvatar');
+    const authBtn = document.getElementById('authBtn');
     const authPromo = document.getElementById('authPromo');
     if (authBtn) authBtn.disabled = false;
 
     if (user) {
       currentUser = user;
-      if (user.isAnonymous) {
-        if (btnText) btnText.textContent = "Sign In";
-        if (authIcon) authIcon.style.display = 'block';
-        if (authAvatar) authAvatar.style.display = 'none';
-      } else {
-        if (btnText) btnText.textContent = user.displayName ? user.displayName.split(' ')[0] : "Profile";
-        if (user.photoURL && authAvatar) {
-           authAvatar.src = user.photoURL;
-           authAvatar.style.display = 'block';
-           if (authIcon) authIcon.style.display = 'none';
-        } else {
-           if (authIcon) authIcon.style.display = 'block';
-           if (authAvatar) authAvatar.style.display = 'none';
-        }
-        if (authPromo) authPromo.style.display = 'none';
-        if (window.location.search.includes("auth=1")) {
-            window.location.href = window.location.pathname; 
-            return;
-        }
-        if (window.updateStatus) window.updateStatus(`Signed in as ${user.displayName || user.email || 'your account'}.`, 'good');
-        await syncStats(user.uid);
+      
+      if (authPromo) authPromo.style.display = user.isAnonymous ? 'block' : 'none';
+
+      if (user.isAnonymous && window.location.search.includes('auth=1')) {
+         if (window.updateStatus) window.updateStatus("Ready! Click 'Sign In' to open Google.", 'good');
       }
+
+      if (!user.isAnonymous && window.location.search.includes("auth=1")) {
+          window.location.href = window.location.pathname; 
+          return;
+      }
+      
+      if (!user.isAnonymous && window.updateStatus) {
+          if (engineReady && !gameActive) {
+            window.updateStatus(`Secure connection established.`, 'good');
+          }
+      }
+
+      await syncProfileAndStats(user.uid, user);
+
     } else {
       currentUser = null;
       signInAnonymously(auth).catch(console.error);
     }
   });
 
-  async function syncStats(uid) {
-    const userRef = doc(db, 'users', uid);
-    let fsStats = { w: 0, l: 0, d: 0 };
-    try {
-      const docSnap = await getDoc(userRef);
-      if (docSnap.exists() && docSnap.data().stats) fsStats = docSnap.data().stats;
-    } catch (error) { return; }
-
-    const localStats = window.gameStats || { w: 0, l: 0, d: 0 };
-    let baseline = { w: 0, l: 0, d: 0 };
-    try {
-      const raw = window.SafeStorage.get('zc_stats_baseline', null);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.uid === uid && parsed.stats) baseline = parsed.stats;
-      }
-    } catch (e) {}
-
-    const delta = {
-      w: Math.max(0, localStats.w - baseline.w),
-      l: Math.max(0, localStats.l - baseline.l),
-      d: Math.max(0, localStats.d - baseline.d)
-    };
-
-    const merged = {
-      w: fsStats.w + delta.w,
-      l: fsStats.l + delta.l,
-      d: fsStats.d + delta.d
-    };
-
-    window.gameStats = merged;
-    window.SafeStorage.set('zc_stats', JSON.stringify(merged));
-    window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid, stats: merged }));
-    window.updateStatsUI();
-
-    if (delta.w + delta.l + delta.d > 0) {
-      try { await setDoc(userRef, { stats: merged }, { merge: true }); } catch (error) {}
-    }
-  }
-
   const originalSaveStats = window.saveStats;
   window.saveStats = function(result) {
     originalSaveStats(result); 
-    if (currentUser && !currentUser.isAnonymous) {
-      setDoc(doc(db, 'users', currentUser.uid), { stats: window.gameStats }, {merge: true}).then(() => {
+    if (currentUser) {
+      setDoc(doc(db, 'users', currentUser.uid), { 
+          stats: window.gameStats,
+          displayName: window.playerProfile.displayName,
+          photoURL: window.playerProfile.photoURL
+      }, {merge: true}).then(() => {
           window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: currentUser.uid, stats: window.gameStats }));
       });
+    }
+  };
+
+  // --- LEADERBOARD LOGIC ---
+  window.fetchLeaderboard = async () => {
+    const list = document.getElementById('leaderboardList');
+    list.innerHTML = '<div class="text-center py-8 text-[var(--chalk-dim)] mono text-sm">Fetching from secure DB...</div>';
+    
+    try {
+      const q = query(collection(db, "users"), orderBy("stats.w", "desc"), limit(10));
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        list.innerHTML = '<div class="text-center py-8 text-[var(--chalk-dim)] mono text-sm">No ranked players yet.</div>';
+        return;
+      }
+
+      let html = '<div class="flex flex-col gap-2">';
+      let rank = 1;
+      
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const wins = data.stats ? data.stats.w : 0;
+        const name = data.displayName || `Guest-${docSnap.id.substring(0, 4)}`;
+        const avatar = data.photoURL || `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${docSnap.id}`;
+        
+        let rankColor = "var(--chalk-dim)";
+        if (rank === 1) rankColor = "var(--chalk-yellow)";
+        else if (rank === 2) rankColor = "#e2e8f0";
+        else if (rank === 3) rankColor = "#ca8a04";
+
+        html += `
+          <div class="flex items-center justify-between p-3 rounded-lg" style="background: rgba(0,0,0,0.15); border: 1px solid var(--tray-line);">
+            <div class="flex items-center gap-3">
+              <span class="font-bold mono text-lg text-right" style="color: ${rankColor}; width: 24px;">#${rank}</span>
+              <img src="${avatar}" class="w-8 h-8 rounded-full" crossorigin="anonymous" style="border: 1px solid var(--tray-line); background: var(--wood-dark);">
+              <span class="font-bold text-sm truncate max-w-[140px]" style="color: var(--chalk);">${name}</span>
+            </div>
+            <div class="text-right flex-shrink-0">
+              <span class="block font-bold mono text-[var(--chalk-pink)]">${wins} W</span>
+            </div>
+          </div>
+        `;
+        rank++;
+      });
+      html += '</div>';
+      list.innerHTML = html;
+      
+    } catch (error) {
+      console.error("Leaderboard Error:", error);
+      list.innerHTML = '<div class="text-center py-8 text-[var(--ink-red)] mono text-sm">Failed to load rankings.</div>';
     }
   };
 </script>
