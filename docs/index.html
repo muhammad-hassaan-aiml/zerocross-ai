@@ -67,7 +67,7 @@
 <script src="coi-serviceworker.js"></script>
 
 <meta name="description" content="Play Ultimate Tic-Tac-Toe against ZeroCross, a self-taught AlphaZero-style engine.">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%231e332a'/%3E%3Cg stroke='%23eef0e2' stroke-width='6' stroke-linecap='round'%3E%3Cline x1='34' y1='10' x2='34' y2='90'/%3E%3Cline x1='66' y1='10' x2='66' y2='90'/%3E%3Cline x1='10' y1='34' x2='90' y2='34'/%3E%3Cline x1='10' y1='66' x2='90' y2='66'/%3E%3C/g%3E%3Cg stroke='%23f0a8a0' stroke-width='7' stroke-linecap='round'%3E%3Cline x1='44' y1='44' x2='56' y2='56'/%3E%3Cline x1='56' y1='44' x2='44' y2='56'/%3E%3C/g%3E%3Ccircle cx='22' cy='22' r='7' fill='none' stroke='%239fd3e8' stroke-width='6'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%231e332a'/%3E%3Cg stroke='%23eef0e2' stroke-width='6' stroke-linecap='round'%3E%3Cline x1='34' y1='10' x2='34' y2='90'/%3E%3Cline x1='66' y1='10' x2='66' y2='90'/%3E%3Cline x1='10' y1='34' x2='90' y2='34'/%3E%3Cline x1='10' y1='66' x2='90' y2='66'/%3E%3C/g%3E%3Cg stroke='%23f0a8a0' stroke-width='7' stroke-linecap='round'%3E%3Cline x1='44' y1='44' x2='56' y2='56'/%3E%3Cline x1='56' y1='44' x2='44' y2='56'/%3E%3Ccircle cx='22' cy='22' r='7' fill='none' stroke='%239fd3e8' stroke-width='6'/%3E%3C/svg%3E">
 <script src="https://cdn.tailwindcss.com"></script>
 
 <style>
@@ -1044,20 +1044,13 @@ body {
           New Game
         </button>
   
-        <button id="shareRecapBtn" onclick="shareRecap()" style="display:none; background:transparent; border:1px solid var(--tray-line); color:var(--chalk);" class="chalk-btn w-full py-2 sm:py-2.5 text-sm flex-shrink-0 hover:bg-[rgba(255,255,255,0.05)] transition-colors">
+        <!-- Replay / Victory Link Button -->
+        <button id="shareRecapBtn" onclick="window.handleShareClick()" style="display:none; background:transparent; border:1px solid var(--tray-line); color:var(--chalk);" class="chalk-btn w-full py-2 sm:py-2.5 text-sm flex-shrink-0 hover:bg-[rgba(255,255,255,0.05)] transition-colors">
           <span id="shareRecapText" class="flex items-center justify-center gap-2">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
-            Share Recap
+            Save & Share Replay
           </span>
         </button>
-
-        <div id="authPromo" style="display:none;" class="mt-2 tray-panel text-center pb-2 pt-3 px-3">
-          <p class="eyebrow mb-2">Save Your Record</p>
-          <button onclick="handleAuthClick()" class="chalk-btn side-btn side-btn-y w-full flex items-center justify-center gap-2" style="padding: 0.4rem;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-            Sign in with Google
-          </button>
-        </div>
       </div>
 
     </aside>
@@ -1075,17 +1068,14 @@ body {
 <!-- ========================================= -->
 <div class="auth-modal-backdrop" id="authModal">
   <div class="auth-modal-card">
-    <h2 style="font-family: 'Kalam', cursive; font-size: 1.6rem; color: var(--chalk); margin-bottom: 0.5rem; font-weight: 700;">Secure Login Ready</h2>
+    <h2 style="font-family: 'Kalam', cursive; font-size: 1.6rem; color: var(--chalk); margin-bottom: 0.5rem; font-weight: 700;">Secure Login Required</h2>
     <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--chalk-dim); margin-bottom: 1.5rem; line-height: 1.45;">
-      The AI engine's hyper-threading has been temporarily suspended to establish a secure connection.
+      The AI engine's hyper-threading must be temporarily suspended to establish a secure connection.
     </p>
-    
-    <!-- STRICT INLINE ONCLICK FOR BULLETPROOF POPUP -->
-    <button id="authModalBtn" onclick="executeGoogleLogin()" class="chalk-btn btn-primary w-full py-2.5 text-sm flex items-center justify-center gap-2" style="transition: all 0.2s ease;">
+    <button id="authModalBtn" onclick="window.executeGoogleLogin()" class="chalk-btn btn-primary w-full py-2.5 text-sm flex items-center justify-center gap-2" style="transition: all 0.2s ease;">
       <svg style="pointer-events:none;" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
       <span id="authModalBtnText" style="pointer-events:none;">Continue to Google</span>
     </button>
-    
     <button id="authModalCancel" onclick="window.location.href = window.location.pathname;" class="mt-4 w-full py-2 text-sm" style="font-family: 'JetBrains Mono', monospace; color: var(--chalk-dim); background: transparent; border: none; cursor: pointer; text-decoration: underline;">
       Cancel & Return to Game
     </button>
@@ -1101,7 +1091,7 @@ body {
     <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--chalk-dim); margin-bottom: 1.5rem; line-height: 1.45;">
       You will be signed out of your Google account and continue playing as a local guest.
     </p>
-    <button id="logoutConfirmBtn" onclick="executeLogout()" class="chalk-btn w-full py-2.5 text-sm flex items-center justify-center gap-2 hover:bg-[rgba(244,63,94,0.25)]" style="background: rgba(244, 63, 94, 0.15); color: var(--chalk-pink); border: 1px solid var(--chalk-pink); border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 700; transition: all 0.2s ease;">
+    <button id="logoutConfirmBtn" onclick="window.executeLogout()" class="chalk-btn w-full py-2.5 text-sm flex items-center justify-center gap-2 hover:bg-[rgba(244,63,94,0.25)]" style="background: rgba(244, 63, 94, 0.15); color: var(--chalk-pink); border: 1px solid var(--chalk-pink); border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 700; transition: all 0.2s ease;">
       <svg style="pointer-events:none;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
       <span id="logoutBtnText" style="pointer-events:none;">Confirm Log Out</span>
     </button>
@@ -1124,7 +1114,7 @@ body {
     </button>
   </div>
   <div class="drawer-body">
-    <!-- NEW: PLAYER PROFILE SECTION -->
+    <!-- PLAYER PROFILE SECTION -->
     <div class="drawer-section">
       <span class="eyebrow block mb-2">Player Profile</span>
       <div style="background: rgba(0,0,0,0.15); border: 1px solid var(--tray-line); border-radius: 8px; padding: 0.8rem;">
@@ -1133,7 +1123,7 @@ body {
         <div class="flex gap-2 mb-3 overflow-x-auto pb-1" id="avatarGrid" style="scrollbar-width: none;">
           <!-- Avatars populated here via JS -->
         </div>
-        <button type="button" id="saveProfileBtn" onclick="saveProfile()" class="chalk-btn side-btn side-btn-y w-full">Save Profile</button>
+        <button type="button" id="saveProfileBtn" onclick="window.saveProfile()" class="chalk-btn side-btn side-btn-y w-full">Save Profile</button>
       </div>
     </div>
 
@@ -1199,6 +1189,8 @@ let engineMode = 'wasm';
 let aiTimeoutId = null;
 let engineInitTimeoutId = null;
 
+let currentReplayId = null; // Stored if victory was auto-saved
+
 const SafeStorage = {
   get(key, fallback = null) {
     try {
@@ -1245,6 +1237,41 @@ let moveHistory = [];
 let viewingHistoryIdx = -1;
 let lastEvalValue = 0;
 let isScrubbing = false;
+
+// Compressed payload for Cloud Replays
+window.getReplayData = () => {
+  const compressedMoves = moveHistory.filter(h => h.moveIdx !== -1).map(h => h.moveIdx);
+  const startedBy = moveHistory.length > 1 ? moveHistory[1].player : 1; 
+
+  return {
+    moves: compressedMoves,
+    starts: startedBy,
+    humanSymbol: humanSymbol,
+    difficulty: currentDifficulty,
+    winner: checkSubGridWin(macroStatus)
+  };
+};
+
+window.legacyCopyToClipboard = function(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (err) {
+    console.error('Fallback copy failed', err);
+    return false;
+  }
+};
 
 const difficultySimulations = {
   easy: 50,
@@ -1813,6 +1840,79 @@ function restoreState(state) {
   renderInsights(state.candidates);
 }
 
+// Rebuilds history safely from compressed Cloud Replay data
+window.applyReplayData = (data) => {
+  resetGameState(); 
+  
+  humanSymbol = data.humanSymbol || 'X';
+  aiSymbol = humanSymbol === 'X' ? 'O' : 'X';
+  currentDifficulty = data.difficulty || 'easy';
+  let simPlayer = data.starts || 1;
+  
+  pushState();
+  
+  for (let idx of (data.moves || [])) {
+    board[idx] = simPlayer;
+    lastMoveIdx = idx;
+    moveCount++;
+    
+    const macro = Math.floor(idx / 9);
+    const micro = idx % 9;
+    const microGrid = board.slice(macro * 9, macro * 9 + 9);
+    macroStatus[macro] = checkSubGridWin(microGrid);
+    
+    freeMoveRule = false;
+    if (macroStatus[micro] !== 0) {
+      activeGrid = -1;
+      freeMoveRule = true;
+    } else {
+      activeGrid = micro;
+    }
+    
+    const curPlayer = simPlayer;
+    simPlayer = -simPlayer;
+    currentTurn = simPlayer;
+    
+    moveHistory.push({
+      board: [...board],
+      macroStatus: [...macroStatus],
+      activeGrid: activeGrid,
+      currentTurn: currentTurn,
+      lastMoveIdx: lastMoveIdx,
+      moveCount: moveCount,
+      freeMoveRule: freeMoveRule,
+      gameActive: false, 
+      evalValue: 0,
+      moveIdx: idx,
+      player: curPlayer,
+      candidates: null
+    });
+  }
+  
+  isPvP = false; 
+  gameActive = false;
+  
+  document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
+  document.getElementById('historyPanel').style.display = 'flex';
+  
+  const mainBtn = document.getElementById('mainActionBtn');
+  mainBtn.innerHTML = "Exit Replay Mode";
+  mainBtn.onclick = () => { window.location.href = window.location.pathname; };
+  
+  document.getElementById('shareRecapBtn').style.display = 'none';
+  
+  const rosterRow = document.getElementById('rosterRow');
+  const statsRow = document.getElementById('statsRow');
+  rosterRow.innerHTML = `${data.playerName || 'Player'} <span class="mark-chip ${humanSymbol === 'X' ? 'chip-x' : 'chip-o'}">${humanSymbol}</span> &nbsp;·&nbsp; Engine <span class="mark-chip ${aiSymbol === 'X' ? 'chip-x' : 'chip-o'}">${aiSymbol}</span>`;
+  rosterRow.style.display = 'block';
+  statsRow.style.display = 'none'; 
+  
+  viewingHistoryIdx = moveHistory.length - 1;
+  restoreState(moveHistory[viewingHistoryIdx]);
+  viewHistory(viewingHistoryIdx); 
+  renderHistory();
+};
+
 function viewHistory(index) {
   if (index === moveHistory.length - 1 && gameActive && !isPvP && currentTurn === aiInternal && !isScrubbing) return;
   
@@ -1824,31 +1924,44 @@ function viewHistory(index) {
   clearTimeout(aiTimeoutId);
 
   const resumeBtn = document.getElementById('resumeBtn');
+  const isReplayMode = new URLSearchParams(window.location.search).has('replay');
   
-  if (isScrubbing) {
-    updateStatus(`Reviewing move ${index}. Play or resume to branch.`, 'pending');
-    resumeBtn.classList.remove('hidden');
-  } else {
-    resumeBtn.classList.add('hidden');
-    if (!gameActive) {
-      const winner = checkSubGridWin(macroStatus);
-      if (winner === 1) updateStatus(isPvP ? 'X wins the game!' : (humanInternal === 1 ? 'You won this one.' : 'Engine won this one.'), winner === humanInternal ? 'good' : 'bad');
-      else if (winner === -1) updateStatus(isPvP ? 'O wins the game!' : (humanInternal === -1 ? 'You won this one.' : 'Engine won this one.'), winner === humanInternal ? 'good' : 'bad');
-      else updateStatus("Board's full — a draw.", 'default');
-    } else {
-      const nextMark = currentTurn === 1 ? 'X' : 'O';
-      if (isPvP) {
-        updateStatus(`${nextMark}'s turn.`, 'active');
+  if (isReplayMode) {
+      resumeBtn.classList.add('hidden');
+      if (index === moveHistory.length - 1) {
+          const winner = checkSubGridWin(macroStatus);
+          if (winner === 1) updateStatus('Player won the match!', 'good');
+          else if (winner === -1) updateStatus('Engine won the match!', 'bad');
+          else updateStatus("Match ended in a draw.", 'default');
       } else {
-        updateStatus(currentTurn === humanInternal ? 'Your move.' : 'Engine is thinking...', 'active');
-        if (currentTurn === aiInternal) {
-            aiTimeoutId = setTimeout(triggerAIMove, 450);
+          updateStatus(`Viewing move ${index} of ${moveHistory.length - 1}.`, 'pending');
+      }
+  } else if (isScrubbing && gameActive) {
+      updateStatus(`Reviewing move ${index}. Play or resume to branch.`, 'pending');
+      resumeBtn.classList.remove('hidden');
+  } else {
+      resumeBtn.classList.add('hidden');
+      if (!gameActive) {
+        const winner = checkSubGridWin(macroStatus);
+        if (winner === 1) updateStatus(isPvP ? 'X wins the game!' : (humanInternal === 1 ? 'You won this one.' : 'Engine won this one.'), winner === humanInternal ? 'good' : 'bad');
+        else if (winner === -1) updateStatus(isPvP ? 'O wins the game!' : (humanInternal === -1 ? 'You won this one.' : 'Engine won this one.'), winner === humanInternal ? 'good' : 'bad');
+        else updateStatus("Board's full — a draw.", 'default');
+      } else {
+        const nextMark = currentTurn === 1 ? 'X' : 'O';
+        if (isPvP) {
+          updateStatus(`${nextMark}'s turn.`, 'active');
+        } else {
+          updateStatus(currentTurn === humanInternal ? 'Your move.' : 'Engine is thinking...', 'active');
+          if (currentTurn === aiInternal) {
+              aiTimeoutId = setTimeout(triggerAIMove, 450);
+          }
         }
       }
-    }
   }
   
-  document.getElementById('shareRecapBtn').style.display = (!isScrubbing && !gameActive) ? 'block' : 'none';
+  if (!isReplayMode) {
+      document.getElementById('shareRecapBtn').style.display = (!isScrubbing && !gameActive) ? 'block' : 'none';
+  }
   
   updateBoardUI();
   renderHistory();
@@ -2045,7 +2158,7 @@ function resetGame() {
     if (engineMode === 'fallback') {
       enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
     } else {
-      enableControls();
+      enableControls('Ready — pick a side or mode.', 'good');
     }
   } else {
     updateStatus("Downloading AI Engine (~15MB)...", "pending");
@@ -2070,9 +2183,17 @@ function resetGameState() {
   lastMoveIdx = -1;
   moveCount = 0;
   freeMoveRule = false;
+  currentReplayId = null;
   updateMoveCount();
   document.getElementById('shareRecapBtn').style.display = 'none';
-  document.getElementById('authPromo').style.display = 'none';
+  
+  const shareText = document.getElementById('shareRecapText');
+  if (shareText) {
+    shareText.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+      Save &amp; Share Replay
+    `;
+  }
   
   moveHistory = [];
   lastEvalValue = 0;
@@ -2434,6 +2555,11 @@ function checkGameOver() {
         updateStatus('You won this one.', 'good'); 
         SoundFX.gameWin(); 
         window.saveStats('win');
+        
+        // Auto-save victory if logged in
+        if (window.triggerAutoSaveVictory) {
+          window.triggerAutoSaveVictory();
+        }
       }
       else if (winner === aiInternal) { 
         updateStatus('Engine won this one.', 'bad'); 
@@ -2445,96 +2571,18 @@ function checkGameOver() {
         SoundFX.gameDraw(); 
         window.saveStats('draw');
       }
-      
-      if (window.showAuthPromoIfGuest) window.showAuthPromoIfGuest();
     }
-    document.getElementById('shareRecapBtn').style.display = 'block';
+    
+    const isReplayMode = new URLSearchParams(window.location.search).has('replay');
+    if (!isReplayMode) {
+      document.getElementById('shareRecapBtn').style.display = 'block';
+    }
+    
     updateBoardUI();
     setMobileSheetCollapsed(false);
     return true;
   }
   return false;
-}
-
-function shareRecap() {
-  const winner = checkSubGridWin(macroStatus);
-  let resultText = "Draw";
-  if (winner !== 0 && winner !== 2) {
-    if (isPvP) {
-      const winSym = internalToXSign(winner) === 1 ? 'X' : 'O';
-      resultText = `${winSym} Won`;
-    } else {
-      resultText = winner === humanInternal ? "I Won" : "Engine Won";
-    }
-  }
-
-  const difficultyText = currentDifficulty.charAt(0).toUpperCase() + currentDifficulty.slice(1);
-  let recap = `ZeroCross | ${isPvP ? 'PvP Match' : 'vs Engine (' + difficultyText + ')'}\n`;
-  recap += `Result: ${resultText} in ${moveCount} moves\n\n`;
-
-  for (let r = 0; r < 3; r++) {
-    let row = '';
-    for (let c = 0; c < 3; c++) {
-      const val = macroStatus[r * 3 + c];
-      if (val === 1 || val === -1) {
-        row += internalToXSign(val) === 1 ? '🟥' : '🟦';
-      } else if (val === 2) {
-        row += '⬜';
-      } else {
-        row += '⬛';
-      }
-    }
-    recap += row + '\n';
-  }
-
-  copyRecapToClipboard(recap);
-}
-
-// navigator.clipboard is missing entirely in some contexts (insecure origins, older
-// browsers, certain in-app/webview browsers) — calling .writeText on it directly throws
-// synchronously and would silently kill the Share Recap button with no feedback. This
-// checks for the API first and falls back to a legacy copy method, always ending with
-// a visible success/failure message for the user.
-function copyRecapToClipboard(text) {
-  const btnText = document.getElementById('shareRecapText');
-  const originalText = btnText.innerHTML;
-
-  function showResult(success) {
-    btnText.innerHTML = success ? 'Copied to Clipboard!' : 'Copy failed — try again';
-    setTimeout(() => { btnText.innerHTML = originalText; }, 2000);
-  }
-
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(() => {
-      showResult(true);
-    }).catch(err => {
-      console.error('Clipboard API failed, trying fallback copy method', err);
-      showResult(legacyCopyToClipboard(text));
-    });
-  } else {
-    showResult(legacyCopyToClipboard(text));
-  }
-}
-
-function legacyCopyToClipboard(text) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.top = '0';
-    ta.style.left = '0';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch (err) {
-    console.error('Fallback copy failed', err);
-    return false;
-  }
 }
 
 function updateHint() {
@@ -2551,10 +2599,6 @@ function updateHint() {
 
 function updateStatus(msg, kind = 'default') {
   const el = document.getElementById('statusMessage');
-  
-  // Do not overwrite downloading state with "Ready"
-  if (el.textContent.includes("Downloading AI Engine") && msg.includes("Ready")) return;
-
   el.innerHTML = '';
   const dot = document.createElement('span');
   dot.className = 'status-dot';
@@ -2594,13 +2638,13 @@ function updateEvalBar(val) {
 async function initEngine() {
   try {
     if (!document.getElementById('authModal').classList.contains('open') && !document.getElementById('logoutModal').classList.contains('open')) {
-        updateStatus("Downloading AI Engine (~15MB)...", "pending");
+      updateStatus("Downloading AI Engine (~15MB)...", "pending");
     }
     
     if (!window.Worker) throw new Error("Web Workers not supported");
 
     if (engineWorker) {
-        engineWorker.terminate();
+      engineWorker.terminate();
     }
 
     engineWorker = new Worker('worker.js');
@@ -2613,12 +2657,14 @@ async function initEngine() {
         updateActiveModelNote('best_model.onnx (Web Worker)');
         
         if (!document.getElementById('authModal').classList.contains('open') && !document.getElementById('logoutModal').classList.contains('open')) {
+          if (!new URLSearchParams(window.location.search).has('replay')) {
             if (!gameActive) {
-                enableControls();
+              enableControls('Ready — pick a side or mode.', 'good');
             } else {
-                const currentActorText = currentTurn === humanInternal ? 'Your move.' : 'Engine is thinking...';
-                updateStatus(isPvP ? (currentTurn === 1 ? "X's turn." : "O's turn.") : currentActorText, 'active');
+              const currentActorText = currentTurn === humanInternal ? 'Your move.' : 'Engine is thinking...';
+              updateStatus(isPvP ? (currentTurn === 1 ? "X's turn." : "O's turn.") : currentActorText, 'active');
             }
+          }
         }
       } else if (data.type === 'init_error') {
         fallbackInit(data.error);
@@ -2653,13 +2699,12 @@ function fallbackInit(e) {
   updateActiveModelNote('Basic AI (Offline/Fallback)');
   
   if (!document.getElementById('authModal').classList.contains('open') && !document.getElementById('logoutModal').classList.contains('open')) {
-      if (!gameActive) {
-        enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
-      }
+    if (!gameActive && !new URLSearchParams(window.location.search).has('replay')) {
+      enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
+    }
   }
 }
 
-// Watch for internet connection to re-try loading the full AI Engine
 window.addEventListener('online', () => {
   if (engineMode === 'fallback') {
     if (!gameActive && !document.getElementById('authModal').classList.contains('open') && !document.getElementById('logoutModal').classList.contains('open')) {
@@ -2713,7 +2758,7 @@ window.onload = () => {
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc, collection, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, getDoc, collection, query, orderBy, limit, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCeoJvlbABPrnxPY_N8rL_bx0yrE4VrWQs",
@@ -2737,14 +2782,11 @@ window.onload = () => {
   const btnText = document.getElementById('authBtnText');
   if (authBtn) authBtn.disabled = true;
 
-  // Modal elements
   const authModal = document.getElementById('authModal');
-  const authModalCancel = document.getElementById('authModalCancel');
   const logoutModal = document.getElementById('logoutModal');
-  const logoutCancelBtn = document.getElementById('logoutCancelBtn');
 
   if (window.location.search.includes("auth=1")) {
-      authModal.classList.add('open');
+    authModal.classList.add('open');
   }
 
   function describeAuthError(error) {
@@ -2757,64 +2799,59 @@ window.onload = () => {
   }
 
   window.executeGoogleLogin = async () => {
-      if (isSigningIn) return;
-      isSigningIn = true;
-      const btn = document.getElementById('authModalBtn');
-      const btnTextElement = document.getElementById('authModalBtnText');
-      const originalBtnHTML = btn.innerHTML;
-      
-      btnTextElement.textContent = "Connecting to Google...";
-      btn.disabled = true;
-      btn.style.opacity = "0.7";
+    if (isSigningIn) return;
+    isSigningIn = true;
+    const btn = document.getElementById('authModalBtn');
+    const btnTextElement = document.getElementById('authModalBtnText');
+    const originalBtnHTML = btn.innerHTML;
+    
+    btnTextElement.textContent = "Connecting to Google...";
+    btn.disabled = true;
+    btn.style.opacity = "0.7";
 
-      try {
-          await signInWithPopup(auth, provider);
-          window.location.href = window.location.pathname; 
-      } catch (error) {
-          console.error("Popup Auth Error:", error);
-          const msg = describeAuthError(error);
-          
-          if (msg) {
-              btn.innerHTML = `<span style="color:var(--ink-red); font-weight:bold;">${msg}</span>`;
-              btn.style.borderColor = "var(--ink-red)";
-              if (window.updateStatus) window.updateStatus(msg, 'bad');
-          }
-          
-          setTimeout(() => {
-              isSigningIn = false;
-              btn.innerHTML = originalBtnHTML;
-              btn.disabled = false;
-              btn.style.opacity = "1";
-              btn.style.borderColor = "";
-          }, 3500);
+    try {
+      await signInWithPopup(auth, provider);
+      window.location.href = window.location.pathname; 
+    } catch (error) {
+      console.error("Popup Auth Error:", error);
+      const msg = describeAuthError(error);
+      
+      if (msg) {
+        btn.innerHTML = `<span style="color:var(--ink-red); font-weight:bold;">${msg}</span>`;
+        btn.style.borderColor = "var(--ink-red)";
+        if (window.updateStatus) window.updateStatus(msg, 'bad');
       }
+      
+      setTimeout(() => {
+        isSigningIn = false;
+        btn.innerHTML = originalBtnHTML;
+        btn.disabled = false;
+        btn.style.opacity = "1";
+        btn.style.borderColor = "";
+      }, 3500);
+    }
   };
 
   window.executeLogout = async () => {
-      const btn = document.getElementById('logoutConfirmBtn');
-      const originalHTML = btn.innerHTML;
-      btn.innerHTML = "Signing out...";
-      btn.disabled = true;
-      try {
-          await signOut(auth);
-          window.gameStats = { w: 0, l: 0, d: 0 };
-          window.SafeStorage.set('zc_stats', JSON.stringify(window.gameStats));
-          window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: null, stats: { w: 0, l: 0, d: 0 } }));
-          if (window.updateStatsUI) window.updateStatsUI();
-          logoutModal.classList.remove('open');
-      } catch (err) {
-          btn.innerHTML = "Failed. Try again.";
-          setTimeout(() => { btn.innerHTML = originalHTML; btn.disabled = false; }, 2000);
-      }
+    const btn = document.getElementById('logoutConfirmBtn');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = "Signing out...";
+    btn.disabled = true;
+    try {
+      await signOut(auth);
+      window.gameStats = { w: 0, l: 0, d: 0 };
+      window.SafeStorage.set('zc_stats', JSON.stringify(window.gameStats));
+      window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: null, stats: { w: 0, l: 0, d: 0 } }));
+      if (window.updateStatsUI) window.updateStatsUI();
+      logoutModal.classList.remove('open');
+      
+      if (window.updateStatus) window.updateStatus("Disconnected. Playing as guest.", "default");
+      setTimeout(() => { btn.innerHTML = originalHTML; btn.disabled = false; }, 500);
+    } catch (err) {
+      btn.innerHTML = "Failed. Try again.";
+      setTimeout(() => { btn.innerHTML = originalHTML; btn.disabled = false; }, 2000);
+    }
   };
-
-  if (authModalCancel) {
-      authModalCancel.addEventListener('click', () => window.location.href = window.location.pathname);
-  }
-
-  if (logoutCancelBtn) {
-      logoutCancelBtn.addEventListener('click', () => logoutModal.classList.remove('open'));
-  }
 
   window.handleAuthClick = async () => {
     if (isSigningIn) return;
@@ -2828,180 +2865,164 @@ window.onload = () => {
     }
   };
 
-  window.showAuthPromoIfGuest = () => {
-    if (currentUser && currentUser.isAnonymous) {
-      const promo = document.getElementById('authPromo');
-      if (promo) promo.style.display = 'block';
-    }
-  };
-
   // --- AVATAR & PROFILE LOGIC ---
   const presetSeeds = ['Mimi', 'Felix', 'Jack', 'Max', 'Luna'];
   
   window.renderAvatarGrid = (selectedAv, googleAv) => {
-      const grid = document.getElementById('avatarGrid');
-      if (!grid) return;
-      
-      let html = '';
-      const options = presetSeeds.map(s => `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${s}`);
-      
-      if (currentUser) options.unshift(`https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${currentUser.uid}`);
-      if (googleAv) options.unshift(googleAv);
+    const grid = document.getElementById('avatarGrid');
+    if (!grid) return;
+    
+    let html = '';
+    const options = presetSeeds.map(s => `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${s}`);
+    
+    if (currentUser) options.unshift(`https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${currentUser.uid}`);
+    if (googleAv) options.unshift(googleAv);
 
-      const uniqueOptions = [...new Set(options)].slice(0, 6);
-      if (!uniqueOptions.includes(selectedAv)) uniqueOptions.unshift(selectedAv);
+    const uniqueOptions = [...new Set(options)].slice(0, 6);
+    if (!uniqueOptions.includes(selectedAv)) uniqueOptions.unshift(selectedAv);
 
-      uniqueOptions.slice(0, 6).forEach(url => {
-          const isSelected = (url === selectedAv);
-          html += `
-              <button type="button" onclick="selectAvatar('${url}')" style="width: 42px; height: 42px; border-radius: 50%; border: 2px solid ${isSelected ? 'var(--chalk-yellow)' : 'transparent'}; overflow: hidden; flex-shrink: 0; background: var(--wood-dark); transition: border-color 0.2s; padding:0;">
-                  <img src="${url}" crossorigin="anonymous" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
-              </button>
-          `;
-      });
-      grid.innerHTML = html;
-      window.selectedAvatarDraft = selectedAv;
+    uniqueOptions.slice(0, 6).forEach(url => {
+      const isSelected = (url === selectedAv);
+      html += `
+        <button type="button" onclick="selectAvatar('${url}')" style="width: 42px; height: 42px; border-radius: 50%; border: 2px solid ${isSelected ? 'var(--chalk-yellow)' : 'transparent'}; overflow: hidden; flex-shrink: 0; background: var(--wood-dark); transition: border-color 0.2s; padding:0;">
+          <img src="${url}" crossorigin="anonymous" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+        </button>
+      `;
+    });
+    grid.innerHTML = html;
+    window.selectedAvatarDraft = selectedAv;
   };
 
   window.selectAvatar = (url) => {
-      window.renderAvatarGrid(url, currentUser && !currentUser.isAnonymous ? currentUser.photoURL : null);
+    window.renderAvatarGrid(url, currentUser && !currentUser.isAnonymous ? currentUser.photoURL : null);
   };
 
   window.saveProfile = async () => {
-      const newName = document.getElementById('profileNameInput').value.trim();
-      if (!newName || !currentUser) return;
+    const newName = document.getElementById('profileNameInput').value.trim();
+    if (!newName || !currentUser) return;
+    
+    const btn = document.getElementById('saveProfileBtn');
+    btn.textContent = "Saving...";
+    btn.disabled = true;
+
+    window.playerProfile.displayName = newName;
+    window.playerProfile.photoURL = window.selectedAvatarDraft;
+
+    document.getElementById('authBtnText').textContent = newName.split(' ')[0];
+    document.getElementById('authAvatar').src = window.selectedAvatarDraft;
+
+    try {
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        displayName: newName,
+        photoURL: window.selectedAvatarDraft
+      }, { merge: true });
       
-      const btn = document.getElementById('saveProfileBtn');
-      btn.textContent = "Saving...";
-      btn.disabled = true;
-
-      window.playerProfile.displayName = newName;
-      window.playerProfile.photoURL = window.selectedAvatarDraft;
-
-      document.getElementById('authBtnText').textContent = newName.split(' ')[0];
-      document.getElementById('authAvatar').src = window.selectedAvatarDraft;
-
-      try {
-          await setDoc(doc(db, 'users', currentUser.uid), {
-              displayName: newName,
-              photoURL: window.selectedAvatarDraft
-          }, { merge: true });
-          
-          btn.textContent = "Saved!";
-          btn.style.borderColor = "var(--chalk-yellow)";
-          btn.style.color = "var(--chalk-yellow)";
-          
-          setTimeout(() => {
-              btn.textContent = "Save Profile";
-              btn.className = "chalk-btn side-btn side-btn-y w-full"; 
-          }, 2000);
-          
-          if (document.getElementById('leaderboardDrawer').classList.contains('open')) {
-              window.fetchLeaderboard();
-          }
-      } catch (e) {
-          btn.textContent = "Error saving";
-      } finally {
-          btn.disabled = false;
+      btn.textContent = "Saved!";
+      btn.style.borderColor = "var(--chalk-yellow)";
+      btn.style.color = "var(--chalk-yellow)";
+      
+      setTimeout(() => {
+        btn.textContent = "Save Profile";
+        btn.className = "chalk-btn side-btn side-btn-y w-full"; 
+      }, 2000);
+      
+      if (document.getElementById('leaderboardDrawer').classList.contains('open')) {
+        window.fetchLeaderboard();
       }
+    } catch (e) {
+      btn.textContent = "Error saving";
+    } finally {
+      btn.disabled = false;
+    }
   };
 
   async function syncProfileAndStats(uid, user) {
-      const userRef = doc(db, 'users', uid);
-      let fsData = {};
-      try {
-          const docSnap = await getDoc(userRef);
-          if (docSnap.exists()) fsData = docSnap.data();
-      } catch (error) {
-          console.error("Cloud fetch failed:", error);
+    const userRef = doc(db, 'users', uid);
+    let fsData = {};
+    try {
+      const docSnap = await getDoc(userRef);
+      if (docSnap.exists()) fsData = docSnap.data();
+    } catch (error) {
+      console.error("Cloud fetch failed:", error);
+    }
+
+    let dName = fsData.displayName;
+    let dAv = fsData.photoURL;
+
+    if (!dName) dName = user.isAnonymous ? `Guest-${uid.substring(0, 4)}` : (user.displayName || `Player-${uid.substring(0,4)}`);
+    if (!dAv) dAv = user.isAnonymous ? `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${uid}` : (user.photoURL || `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${uid}`);
+
+    window.playerProfile = { displayName: dName, photoURL: dAv };
+
+    const btnTextElement = document.getElementById('authBtnText');
+    const authAvatar = document.getElementById('authAvatar');
+    const authIcon = document.getElementById('authIcon');
+    
+    if (btnTextElement) btnTextElement.textContent = dName.split(' ')[0];
+    if (authAvatar) {
+      authAvatar.src = dAv;
+      authAvatar.style.display = 'block';
+    }
+    if (authIcon) authIcon.style.display = 'none';
+
+    const nameInput = document.getElementById('profileNameInput');
+    if (nameInput) nameInput.value = dName;
+    if (window.renderAvatarGrid) window.renderAvatarGrid(dAv, !user.isAnonymous ? user.photoURL : null);
+
+    let fsStats = fsData.stats || { w: 0, l: 0, d: 0 };
+    const localStats = window.gameStats || { w: 0, l: 0, d: 0 };
+    let baseline = { w: 0, l: 0, d: 0 };
+    
+    try {
+      const raw = window.SafeStorage.get('zc_stats_baseline', null);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.uid === uid && parsed.stats) baseline = parsed.stats;
       }
+    } catch (e) {}
 
-      let dName = fsData.displayName;
-      let dAv = fsData.photoURL;
+    const delta = {
+      w: Math.max(0, localStats.w - baseline.w),
+      l: Math.max(0, localStats.l - baseline.l),
+      d: Math.max(0, localStats.d - baseline.d)
+    };
 
-      if (!dName) dName = user.isAnonymous ? `Guest-${uid.substring(0, 4)}` : (user.displayName || `Player-${uid.substring(0,4)}`);
-      if (!dAv) dAv = user.isAnonymous ? `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${uid}` : (user.photoURL || `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${uid}`);
+    const merged = {
+      w: fsStats.w + delta.w,
+      l: fsStats.l + delta.l,
+      d: fsStats.d + delta.d
+    };
 
-      window.playerProfile = { displayName: dName, photoURL: dAv };
+    window.gameStats = merged;
+    window.SafeStorage.set('zc_stats', JSON.stringify(merged));
+    window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid, stats: merged }));
+    if (window.updateStatsUI) window.updateStatsUI();
 
-      const btnTextElement = document.getElementById('authBtnText');
-      const authAvatar = document.getElementById('authAvatar');
-      const authIcon = document.getElementById('authIcon');
-      
-      if (btnTextElement) btnTextElement.textContent = dName.split(' ')[0];
-      if (authAvatar) {
-          authAvatar.src = dAv;
-          authAvatar.style.display = 'block';
-      }
-      if (authIcon) authIcon.style.display = 'none';
-
-      const nameInput = document.getElementById('profileNameInput');
-      if (nameInput) nameInput.value = dName;
-      if (window.renderAvatarGrid) window.renderAvatarGrid(dAv, !user.isAnonymous ? user.photoURL : null);
-
-      let fsStats = fsData.stats || { w: 0, l: 0, d: 0 };
-      const localStats = window.gameStats || { w: 0, l: 0, d: 0 };
-      let baseline = { w: 0, l: 0, d: 0 };
-      
-      try {
-          const raw = window.SafeStorage.get('zc_stats_baseline', null);
-          if (raw) {
-              const parsed = JSON.parse(raw);
-              if (parsed && parsed.uid === uid && parsed.stats) baseline = parsed.stats;
-          }
-      } catch (e) {}
-
-      const delta = {
-          w: Math.max(0, localStats.w - baseline.w),
-          l: Math.max(0, localStats.l - baseline.l),
-          d: Math.max(0, localStats.d - baseline.d)
-      };
-
-      const merged = {
-          w: fsStats.w + delta.w,
-          l: fsStats.l + delta.l,
-          d: fsStats.d + delta.d
-      };
-
-      window.gameStats = merged;
-      window.SafeStorage.set('zc_stats', JSON.stringify(merged));
-      window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid, stats: merged }));
-      if (window.updateStatsUI) window.updateStatsUI();
-
-      try {
-          await setDoc(userRef, {
-              displayName: dName,
-              photoURL: dAv,
-              stats: merged
-          }, { merge: true });
-      } catch (error) {
-          console.error("Failed to save merged data to DB:", error);
-      }
+    try {
+      await setDoc(userRef, {
+        displayName: dName,
+        photoURL: dAv,
+        stats: merged
+      }, { merge: true });
+    } catch (error) {
+      console.error("Failed to save merged data to DB:", error);
+    }
   }
 
   onAuthStateChanged(auth, async (user) => {
     const authBtn = document.getElementById('authBtn');
-    const authPromo = document.getElementById('authPromo');
     if (authBtn) authBtn.disabled = false;
 
     if (user) {
       currentUser = user;
-      
-      if (authPromo) authPromo.style.display = user.isAnonymous ? 'block' : 'none';
 
       if (user.isAnonymous && window.location.search.includes('auth=1')) {
-         if (window.updateStatus) window.updateStatus("Ready! Click 'Sign In' to open Google.", 'good');
+        if (window.updateStatus) window.updateStatus("Ready! Click 'Sign In' to open Google.", 'good');
       }
 
       if (!user.isAnonymous && window.location.search.includes("auth=1")) {
-          window.location.href = window.location.pathname; 
-          return;
-      }
-      
-      if (!user.isAnonymous && window.updateStatus) {
-          if (engineReady && !gameActive) {
-            window.updateStatus(`Secure connection established.`, 'good');
-          }
+        window.location.href = window.location.pathname; 
+        return;
       }
 
       await syncProfileAndStats(user.uid, user);
@@ -3017,11 +3038,11 @@ window.onload = () => {
     originalSaveStats(result); 
     if (currentUser) {
       setDoc(doc(db, 'users', currentUser.uid), { 
-          stats: window.gameStats,
-          displayName: window.playerProfile.displayName,
-          photoURL: window.playerProfile.photoURL
+        stats: window.gameStats,
+        displayName: window.playerProfile.displayName,
+        photoURL: window.playerProfile.photoURL
       }, {merge: true}).then(() => {
-          window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: currentUser.uid, stats: window.gameStats }));
+        window.SafeStorage.set('zc_stats_baseline', JSON.stringify({ uid: currentUser.uid, stats: window.gameStats }));
       });
     }
   };
@@ -3076,6 +3097,112 @@ window.onload = () => {
       list.innerHTML = '<div class="text-center py-8 text-[var(--ink-red)] mono text-sm">Failed to load rankings.</div>';
     }
   };
+
+  // AUTO-SAVE LOGIC FOR VICTORIES
+  window.triggerAutoSaveVictory = async () => {
+    if (!currentUser || currentUser.isAnonymous) return;
+    
+    try {
+      const data = window.getReplayData();
+      data.playerName = window.playerProfile.displayName || "Player";
+      data.timestamp = new Date().toISOString();
+
+      const docRef = await addDoc(collection(db, "replays"), data);
+      currentReplayId = docRef.id;
+      
+      const shareText = document.getElementById('shareRecapText');
+      if (shareText) {
+        shareText.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+          Copy Victory Link
+        `;
+      }
+    } catch (e) {
+      console.error("Auto-save victory failed:", e);
+    }
+  };
+
+  // UNIFIED SHARE / COPY HANDLER
+  window.handleShareClick = async () => {
+    if (!currentUser || currentUser.isAnonymous) {
+      document.getElementById('authModal').classList.add('open');
+      return;
+    }
+
+    const btnText = document.getElementById('shareRecapText');
+    const originalText = btnText.innerHTML;
+
+    // If already auto-saved, copy immediately
+    if (currentReplayId) {
+      const replayUrl = window.location.origin + window.location.pathname + "?replay=" + currentReplayId;
+      const shareMsg = `Watch my ZeroCross match against the Engine!\n${replayUrl}`;
+      
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(shareMsg);
+      } else {
+        window.legacyCopyToClipboard(shareMsg);
+      }
+      
+      btnText.innerHTML = "Link Copied!";
+      setTimeout(() => { btnText.innerHTML = originalText; }, 2000);
+      return;
+    }
+
+    // Otherwise, perform manual upload (e.g. for non-auto-saved draws/losses)
+    btnText.innerHTML = "Uploading Replay...";
+    try {
+      const data = window.getReplayData();
+      data.playerName = window.playerProfile.displayName || "Player";
+      data.timestamp = new Date().toISOString();
+
+      const docRef = await addDoc(collection(db, "replays"), data);
+      currentReplayId = docRef.id;
+      
+      const replayUrl = window.location.origin + window.location.pathname + "?replay=" + docRef.id;
+      const shareMsg = `Watch my ZeroCross match against the Engine!\n${replayUrl}`;
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(shareMsg);
+      } else {
+        window.legacyCopyToClipboard(shareMsg);
+      }
+      btnText.innerHTML = "Link Copied!";
+    } catch (err) {
+      console.error("Replay save failed:", err);
+      btnText.innerHTML = "Upload Failed";
+    }
+
+    setTimeout(() => { btnText.innerHTML = originalText; }, 2500);
+  };
+
+  // CHECK URL FOR REPLAYS ON BOOT
+  const urlParams = new URLSearchParams(window.location.search);
+  const replayId = urlParams.get('replay');
+
+  if (replayId) {
+    async function loadCloudReplay() {
+      if (window.updateStatus) window.updateStatus("Loading Cloud Replay...", "pending");
+      try {
+        const docSnap = await getDoc(doc(db, "replays", replayId));
+        if (docSnap.exists()) {
+          const rData = docSnap.data();
+          if (window.applyReplayData) window.applyReplayData(rData);
+          
+          let wText = "Draw";
+          if (rData.winner === 1) wText = `${rData.playerName} Won`;
+          if (rData.winner === -1) wText = `Engine Won`;
+          
+          if (window.updateStatus) window.updateStatus(`Replay: ${rData.playerName} vs Engine - ${wText}`, "good");
+        } else {
+          if (window.updateStatus) window.updateStatus("Replay not found or expired.", "bad");
+        }
+      } catch (error) {
+        console.error("Error fetching replay:", error);
+        if (window.updateStatus) window.updateStatus("Failed to load replay.", "bad");
+      }
+    }
+    loadCloudReplay();
+  }
 </script>
 
 </body>
