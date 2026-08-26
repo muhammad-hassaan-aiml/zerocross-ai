@@ -6,6 +6,7 @@ import time
 import sys
 import argparse
 import random
+import shutil
 
 sys.path.extend(['.', 'build', '../build', os.path.join(os.getcwd(), 'build')])
 
@@ -125,7 +126,7 @@ def prune_numbered_files(drive_dir, prefix, suffix, keep_last_n):
 def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_train=True, do_evaluate=True,
                   concurrent_games=10, games_per_iteration=None, mcts_sims=50, eval_games=2, eval_sims=20,
                   batch_size=512, num_res_blocks=None, num_channels=None, max_consecutive_rejections=5,
-                  min_force_promote_winrate=0.45, stall_eval_multiplier=3, buffer_archive_interval=5,
+                  min_force_promote_winrate=0.52, stall_eval_multiplier=3, buffer_archive_interval=5,
                   champion_archive_keep=25, buffer_archive_keep=3, random_baseline_interval=10,
                   random_baseline_games=20, random_baseline_sims=50):
 
@@ -246,8 +247,10 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             current_lr = 0.001
         elif current_iter <= 250:
             current_lr = 0.0005
-        else:
+        elif current_iter <= 700:
             current_lr = 0.0001
+        else:
+            current_lr = 0.00003
 
         print(f"Current Learning Rate: {current_lr}")
 
@@ -528,6 +531,12 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             print(f"Evaluation Time:         {eval_duration:.2f} sec")
         print(f"Total Iteration Time:    {total_iter_duration:.2f} sec")
 
+        # SAVE A PERMANENT MILESTONE EVERY 50 ITERATIONS
+        if current_iter % 50 == 0:
+            milestone_path = os.path.join(drive_dir, f"milestone_iter_{current_iter}.pth")
+            shutil.copy(model_path, milestone_path)
+            print(f"Permanent milestone saved: {milestone_path}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ZeroCross Training Pipeline")
@@ -547,7 +556,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-res-blocks", type=int, default=None, help="Override ZeroCrossNet residual block count (default: network.py's default)")
     parser.add_argument("--num-channels", type=int, default=None, help="Override ZeroCrossNet channel width (default: network.py's default)")
     parser.add_argument("--max-rejections", type=int, default=5, help="After this many consecutive gating rejections in a row, consider a stall-guarded forced promotion (see --min-force-promote-winrate) instead of stalling forever on eval noise")
-    parser.add_argument("--min-force-promote-winrate", type=float, default=0.45, help="Safety floor for forced promotion: only force through a candidate stuck at --max-rejections if its win rate vs the champion is at least this high. Below this, it's treated as a genuine regression and NOT promoted, no matter how many rejections have piled up")
+    parser.add_argument("--min-force-promote-winrate", type=float, default=0.52, help="Safety floor for forced promotion: only force through a candidate stuck at --max-rejections if its win rate vs the champion is at least this high. Below this, it's treated as a genuine regression and NOT promoted, no matter how many rejections have piled up")
     parser.add_argument("--stall-eval-multiplier", type=int, default=3, help="Once consecutive rejections reach half of --max-rejections, multiply --eval-games by this factor for subsequent evaluations, to shrink confidence-interval noise before a forced-promotion decision is made")
     parser.add_argument("--max-buffer-size", type=int, default=1000000, help="Max samples kept in the replay buffer (deque maxlen); oldest samples are dropped first")
     parser.add_argument("--buffer-archive-interval", type=int, default=5, help="Write a full numbered replay-buffer archive every N iterations, instead of every iteration, to cut redundant disk I/O")
