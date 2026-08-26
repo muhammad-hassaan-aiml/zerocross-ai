@@ -966,6 +966,13 @@ body {
             <span class="eyebrow block mb-1">Local Multiplayer</span>
             <button onclick="startPvP()" class="chalk-btn side-btn side-btn-y w-full">Pass &amp; Play</button>
           </div>
+          <div class="mt-1">
+            <span class="eyebrow block mb-1">Online Multiplayer</span>
+            <button onclick="openMultiplayerModal()" class="chalk-btn side-btn w-full flex items-center justify-center gap-2" style="color: var(--chalk-blue); border-color: var(--chalk-blue); background: rgba(159, 211, 232, 0.08);">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+              Play Online PvP
+            </button>
+          </div>
         </div>
         <p class="eyebrow mt-2 hidden sm:block" style="text-transform:none; letter-spacing:0;">Coin toss decides who opens the board.</p>
         
@@ -1098,6 +1105,52 @@ body {
     </button>
     <button id="logoutCancelBtn" onclick="document.getElementById('logoutModal').classList.remove('open');" class="mt-4 w-full py-2 text-sm" style="font-family: 'JetBrains Mono', monospace; color: var(--chalk-dim); background: transparent; border: none; cursor: pointer; text-decoration: underline;">
       Cancel & Return to Game
+    </button>
+  </div>
+</div>
+
+<!-- ========================================= -->
+<!-- MULTIPLAYER LOBBY OVERLAY                 -->
+<!-- ========================================= -->
+<div class="auth-modal-backdrop" id="multiplayerModal">
+  <div class="auth-modal-card">
+    <h2 style="font-family: 'Kalam', cursive; font-size: 1.6rem; color: var(--chalk); margin-bottom: 0.5rem; font-weight: 700;">Online PvP</h2>
+
+    <!-- State 1: Choose Host or Join -->
+    <div id="mpChooseState">
+      <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--chalk-dim); margin-bottom: 1.5rem; line-height: 1.45;">
+        Play against a friend in real-time.
+      </p>
+      <div class="flex flex-col gap-3">
+        <button onclick="showHostState()" class="chalk-btn btn-primary w-full py-2.5 text-sm">Host a Game</button>
+        <button onclick="showJoinState()" class="chalk-btn w-full py-2.5 text-sm hover:bg-[rgba(255,255,255,0.05)]" style="border: 1px solid var(--tray-line); color: var(--chalk); background: transparent;">Join a Game</button>
+      </div>
+    </div>
+
+    <!-- State 2: Hosting a Room -->
+    <div id="mpHostState" class="hidden">
+      <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--chalk-dim); margin-bottom: 1rem;">Share this code with your opponent:</p>
+      <div class="mono font-bold text-4xl mb-4 tracking-widest text-center" style="color: var(--chalk-yellow); letter-spacing: 0.25em;" id="hostRoomCode">...</div>
+      <div class="flex items-center justify-center gap-2 mb-5">
+        <div class="boot-spinner" style="width: 14px; height: 14px; border-width: 2px;"></div>
+        <span class="eyebrow" style="margin:0; text-transform: none;">Waiting for player...</span>
+      </div>
+      <button onclick="cancelMatchmaking()" class="chalk-btn w-full py-2 text-sm" style="border: 1px solid var(--ink-red); color: var(--ink-red); background: rgba(193, 73, 90, 0.1);">Cancel Hosting</button>
+    </div>
+
+    <!-- State 3: Joining a Room -->
+    <div id="mpJoinState" class="hidden">
+      <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--chalk-dim); margin-bottom: 1rem;">Enter the 5-letter room code:</p>
+      <input type="text" id="joinCodeInput" class="native-select mb-4 text-center text-2xl font-bold uppercase tracking-widest" style="background: rgba(0,0,0,0.3); border-color: var(--tray-line); color: var(--chalk-yellow); text-transform: uppercase;" placeholder="XXXXX" maxlength="5">
+      <div class="flex flex-col gap-3">
+        <button onclick="joinRoom()" class="chalk-btn btn-primary w-full py-2.5 text-sm" id="joinRoomBtn">Connect</button>
+        <button onclick="resetMultiplayerModal()" class="chalk-btn w-full py-2 text-sm" style="border: 1px solid var(--tray-line); color: var(--chalk-dim); background: transparent;">Back</button>
+      </div>
+    </div>
+
+    <!-- Close Button -->
+    <button id="mpCloseBtn" onclick="closeMultiplayerModal()" class="mt-4 w-full py-2 text-sm" style="font-family: 'JetBrains Mono', monospace; color: var(--chalk-dim); background: transparent; border: none; cursor: pointer; text-decoration: underline;">
+      Close Lobby
     </button>
   </div>
 </div>
@@ -3199,7 +3252,7 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
       return;
     }
 
-    // Otherwise, perform manual upload (e.g. for non-auto-saved draws/losses)
+    // Otherwise, perform manual upload
     btnText.innerHTML = "Uploading Replay...";
     try {
       const data = window.getReplayData();
@@ -3254,6 +3307,69 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
     }
     loadCloudReplay();
   }
+
+  // --- ONLINE MULTIPLAYER UI LOGIC ---
+  window.openMultiplayerModal = () => {
+    // Require Google Login for online multiplayer
+    if (!currentUser || currentUser.isAnonymous) {
+      document.getElementById('authModal').classList.add('open');
+      return;
+    }
+    resetMultiplayerModal();
+    document.getElementById('multiplayerModal').classList.add('open');
+  };
+
+  window.closeMultiplayerModal = () => {
+    document.getElementById('multiplayerModal').classList.remove('open');
+    window.cancelMatchmaking();
+  };
+
+  window.resetMultiplayerModal = () => {
+    document.getElementById('mpChooseState').classList.remove('hidden');
+    document.getElementById('mpHostState').classList.add('hidden');
+    document.getElementById('mpJoinState').classList.add('hidden');
+    document.getElementById('mpCloseBtn').style.display = 'block';
+    document.getElementById('joinCodeInput').value = '';
+  };
+
+  window.showHostState = () => {
+    document.getElementById('mpChooseState').classList.add('hidden');
+    document.getElementById('mpHostState').classList.remove('hidden');
+    document.getElementById('mpCloseBtn').style.display = 'none';
+    
+    // Generate a visually distinct random 5-character string
+    const code = Math.random().toString(36).substring(2, 7).toUpperCase();
+    document.getElementById('hostRoomCode').textContent = code;
+    
+    // [FIREBASE DATABASE LOGIC WILL GO HERE IN PART 2]
+  };
+
+  window.showJoinState = () => {
+    document.getElementById('mpChooseState').classList.add('hidden');
+    document.getElementById('mpJoinState').classList.remove('hidden');
+    document.getElementById('mpCloseBtn').style.display = 'none';
+    setTimeout(() => document.getElementById('joinCodeInput').focus(), 100);
+  };
+
+  window.cancelMatchmaking = () => {
+    // [FIREBASE CLEANUP LOGIC WILL GO HERE IN PART 2]
+    window.resetMultiplayerModal();
+  };
+
+  window.joinRoom = () => {
+    const code = document.getElementById('joinCodeInput').value.trim().toUpperCase();
+    if (code.length !== 5) {
+      document.getElementById('joinCodeInput').style.borderColor = "var(--ink-red)";
+      setTimeout(() => document.getElementById('joinCodeInput').style.borderColor = "var(--tray-line)", 1500);
+      return;
+    }
+    
+    document.getElementById('joinRoomBtn').textContent = "Connecting...";
+    document.getElementById('joinRoomBtn').disabled = true;
+
+    // [FIREBASE JOIN LOGIC WILL GO HERE IN PART 2]
+  };
+
 </script>
 
 </body>
