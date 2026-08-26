@@ -10,9 +10,10 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 
-<!-- Boot Splash & Critical Fallbacks -->
+<!-- Boot Splash -->
 <style>
   .hidden { display: none !important; }
+  .block { display: block !important; }
   .flex { display: flex; }
   .grid { display: grid; }
   .w-full { width: 100%; }
@@ -61,6 +62,44 @@
 </style>
 
 <script>
+  // SECURE NATIVE SVG ENCODERS
+  window.utf8ToBase64 = function(str) {
+    const bytes = new TextEncoder().encode(str);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  };
+
+  window.generateAvatarSVG = function(seed) {
+    if (!seed) seed = 'fallback';
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+    const h1 = Math.abs(hash) % 360;
+    const h2 = (Math.abs(hash) + 140) % 360;
+    const c1 = `hsl(${h1}, 70%, 65%)`; 
+    const c2 = `hsl(${h2}, 40%, 25%)`; 
+    const eyeStyle = Math.abs(hash) % 2 === 0 ? 'circle' : 'rect';
+    const mouthStyle = Math.abs(hash) % 3;
+    let eyes = eyeStyle === 'circle' ? `<circle cx="34" cy="42" r="6" fill="#1e332a"/><circle cx="66" cy="42" r="6" fill="#1e332a"/>` : `<rect x="28" y="36" width="12" height="12" rx="3" fill="#1e332a"/><rect x="60" y="36" width="12" height="12" rx="3" fill="#1e332a"/>`;
+    let mouth = mouthStyle === 0 ? `<path d="M 36 62 Q 50 78 64 62" stroke="#1e332a" stroke-width="5" stroke-linecap="round" fill="none"/>` : mouthStyle === 1 ? `<line x1="40" y1="65" x2="60" y2="65" stroke="#1e332a" stroke-width="5" stroke-linecap="round"/>` : `<circle cx="50" cy="65" r="6" fill="#1e332a"/>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="${c2}"/><circle cx="50" cy="50" r="38" fill="${c1}"/>${eyes}${mouth}</svg>`;
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  };
+
+  window.generateEmojiSVG = function(emoji) {
+    const hue = Math.floor(Math.random() * 360);
+    const bg = `hsl(${hue}, 40%, 25%)`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="${bg}"/><text x="50" y="68" font-size="52" text-anchor="middle" font-family="sans-serif">${emoji}</text></svg>`;
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  };
+
+  window.generateRandomEmoji = function() {
+    const emojis = ['🤖','👻','👾','🦊','🐱','🦄','🔥','😎','👽','🤡','🤠','😈','👹','🐒','🐧','🐢','🦖','🐙','🚀','💎'];
+    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+    const url = window.generateEmojiSVG(randomEmoji);
+    if (window.selectAvatar) window.selectAvatar(url);
+  };
+
   (function () {
     const isAuthMode = window.location.search.includes('auth=1');
     const isRedirecting = sessionStorage.getItem('zc_auth_redirect');
@@ -76,6 +115,8 @@
 
 <meta name="description" content="Play Ultimate Tic-Tac-Toe against ZeroCross, a self-taught AlphaZero-style engine.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%231e332a'/%3E%3Cg stroke='%23eef0e2' stroke-width='6' stroke-linecap='round'%3E%3Cline x1='34' y1='10' x2='34' y2='90'/%3E%3Cline x1='66' y1='10' x2='66' y2='90'/%3E%3Cline x1='10' y1='34' x2='90' y2='34'/%3E%3Cline x1='10' y1='66' x2='90' y2='66'/%3E%3C/g%3E%3Cg stroke='%23f0a8a0' stroke-width='7' stroke-linecap='round'%3E%3Cline x1='44' y1='44' x2='56' y2='56'/%3E%3Cline x1='56' y1='44' x2='44' y2='56'/%3E%3Ccircle cx='22' cy='22' r='7' fill='none' stroke='%239fd3e8' stroke-width='6'/%3E%3C/svg%3E">
+
+<!-- 100% RELIABLE TAILWIND CDN -->
 <script src="https://cdn.tailwindcss.com"></script>
 
 <style>
@@ -484,6 +525,21 @@ body {
   color: var(--chalk-dim);
 }
 
+/* Dedicated CSS for Chat Input */
+.chat-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--tray-line);
+  color: var(--chalk);
+  border-radius: 8px;
+  padding: 0.4rem 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+.chat-input:focus { border-color: var(--chalk-yellow); }
+
 .theme-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -581,20 +637,16 @@ body {
 }
 .toggle-switch.on .toggle-knob { transform: translateX(17px); }
 
-/* Standard Icon Button */
+/* MATHEMATICALLY PERFECT ICON BUTTONS */
 .icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
   background: rgba(0, 0, 0, 0.22);
   border: 1px solid var(--tray-line);
   color: var(--chalk-dim);
   border-radius: 9px;
-  padding: clamp(0.35rem, 1.2dvh, 0.45rem) clamp(0.5rem, 2vw, 0.6rem);
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
   cursor: pointer;
   touch-action: manipulation;
   transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
@@ -607,19 +659,16 @@ body {
 
 /* PERFECTED PROFILE PILL FIX */
 .icon-btn.is-auth-pill {
-    padding: 0.2rem 0.6rem 0.2rem 0.25rem;
+    padding: 0 0.8rem 0 0.25rem;
+    width: auto;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.05);
-    border-color: transparent;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.1);
+    gap: 0.4rem;
 }
 .icon-btn.is-auth-pill:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.12);
     border-color: var(--chalk-dim);
-}
-@media (max-width: 639px) {
-    .icon-btn.is-auth-pill {
-        padding: 0.2rem; /* Transforms into a pure circular button on mobile without a box */
-    }
 }
 
 /* EMOJI MENU CSS */
@@ -921,7 +970,7 @@ body {
 <div class="app-shell">
   <header class="flex items-center justify-between gap-2 sm:gap-3 px-3.5 pt-2 pb-1 sm:px-5 sm:pt-3 lg:px-8 lg:pt-6 lg:pb-0 flex-shrink-0 relative z-10">
     <div class="flex items-center gap-2.5 min-w-0">
-      <svg viewBox="0 0 100 100" aria-hidden="true" class="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 flex-shrink-0" style="width: 28px; height: 28px; min-width: 28px;">
+      <svg viewBox="0 0 100 100" aria-hidden="true" class="flex-shrink-0" style="width: 28px; height: 28px; min-width: 28px;">
         <rect width="100" height="100" rx="16" fill="var(--board-bg)"/>
         <g stroke="var(--chalk)" stroke-width="6" stroke-linecap="round">
           <line x1="34" y1="10" x2="34" y2="90"/>
@@ -942,21 +991,24 @@ body {
         <p class="eyebrow truncate" style="font-size:0.58rem;">A self-taught neural network powered by reinforcement learning</p>
       </div>
     </div>
-    <div class="flex items-center gap-1.5 flex-shrink-0">
+    
+    <!-- HARDCODED HEADER BUTTONS TO PREVENT CSS EXPLOSIONS -->
+    <div class="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
       
-      <!-- Authentication Header Button -->
-      <button type="button" class="icon-btn auth-btn" id="authBtn" onclick="handleAuthClick()" aria-label="Sign In">
-        <svg id="authIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <!-- Authentication Header Button (The Pill) -->
+      <button type="button" class="icon-btn flex items-center justify-center gap-1 sm:gap-2 h-[38px] px-3 sm:px-4" id="authBtn" onclick="handleAuthClick()" aria-label="Sign In">
+        <svg id="authIcon" class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
           <circle cx="12" cy="7" r="4"></circle>
         </svg>
-        <img id="authAvatar" class="hidden w-[22px] h-[22px] rounded-full object-cover" src="" alt="Avatar" aria-hidden="true" crossorigin="anonymous" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src=window.generateAvatarSVG('error');">
-        <span id="authBtnText" class="hidden sm:inline">Sign In</span>
+        <img id="authAvatar" class="hidden rounded-full object-cover flex-shrink-0" style="width: 24px; height: 24px;" src="" alt="Avatar" aria-hidden="true" crossorigin="anonymous" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src=window.generateAvatarSVG('error');">
+        <!-- Always strictly visible inside the pill, just truncated if too long -->
+        <span id="authBtnText" class="font-bold text-sm truncate max-w-[70px] sm:max-w-[120px]">Sign In</span>
       </button>
 
       <!-- Leaderboard Button -->
-      <button type="button" class="icon-btn rank-btn" id="leaderboardBtn" onclick="openLeaderboard()" aria-label="Global Rankings">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <button type="button" class="icon-btn w-[38px] h-[38px] flex items-center justify-center flex-shrink-0 p-0" id="leaderboardBtn" onclick="openLeaderboard()" aria-label="Global Rankings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
           <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
           <path d="M4 22h16"></path>
@@ -964,31 +1016,28 @@ body {
           <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path>
           <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path>
         </svg>
-        <span class="hidden sm:inline">Rankings</span>
       </button>
 
       <!-- Sound Button -->
-      <button type="button" class="icon-btn sound-btn" id="soundBtn" onclick="toggleSound()" aria-pressed="true" aria-label="Toggle sound effects">
-        <svg id="soundIconOn" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <button type="button" class="icon-btn sound-btn w-[38px] h-[38px] flex items-center justify-center flex-shrink-0 p-0" id="soundBtn" onclick="toggleSound()" aria-pressed="true" aria-label="Toggle sound effects">
+        <svg id="soundIconOn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polygon points="4 9 8 9 12 5 12 19 8 15 4 15 4 9"/>
           <path d="M17 8a5 5 0 0 1 0 8"/>
           <path d="M19.5 5.5a9 9 0 0 1 0 13"/>
         </svg>
-        <svg id="soundIconOff" style="display:none;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="hidden">
+        <svg id="soundIconOff" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polygon points="4 9 8 9 12 5 12 19 8 15 4 15 4 9"/>
           <line x1="17" y1="9" x2="23" y2="15"/>
           <line x1="23" y1="9" x2="17" y2="15"/>
         </svg>
-        <span class="hidden sm:inline">Sound</span>
       </button>
       
       <!-- Settings Button -->
-      <button type="button" class="icon-btn" id="settingsBtn" onclick="openSettingsModal()" aria-haspopup="dialog" aria-controls="settingsModal">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <button type="button" class="icon-btn w-[38px] h-[38px] flex items-center justify-center flex-shrink-0 p-0" id="settingsBtn" onclick="openSettingsModal()" aria-haspopup="dialog" aria-controls="settingsModal">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
-        <span class="hidden sm:inline">Settings</span>
       </button>
     </div>
   </header>
@@ -1091,32 +1140,32 @@ body {
         </div>
         
         <!-- EMOJI PICKER POPUP -->
-        <div id="emojiPicker" class="absolute hidden bottom-[3.25rem] right-2 p-2 bg-[var(--tray)] border border-[var(--tray-line)] rounded-lg shadow-xl z-50">
+        <div id="emojiPicker" class="absolute hidden bottom-[3.25rem] right-2 p-2 bg-[var(--tray)] border border-[var(--tray-line)] rounded-lg shadow-xl z-50 backdrop-blur-md">
           <div class="grid grid-cols-5 gap-1 mb-1">
-            <button class="emoji-btn" onclick="window.addEmoji('👍')">👍</button>
-            <button class="emoji-btn" onclick="window.addEmoji('😂')">😂</button>
-            <button class="emoji-btn" onclick="window.addEmoji('💀')">💀</button>
-            <button class="emoji-btn" onclick="window.addEmoji('🔥')">🔥</button>
-            <button class="emoji-btn" onclick="window.addEmoji('😭')">😭</button>
-            <button class="emoji-btn" onclick="window.addEmoji('😡')">😡</button>
-            <button class="emoji-btn" onclick="window.addEmoji('👀')">👀</button>
-            <button class="emoji-btn" onclick="window.addEmoji('🤯')">🤯</button>
-            <button class="emoji-btn" onclick="window.addEmoji('🤝')">🤝</button>
-            <button class="emoji-btn" onclick="window.addEmoji('🎉')">🎉</button>
+            <button class="emoji-btn" onclick="window.addEmoji(event, '👍')">👍</button>
+            <button class="emoji-btn" onclick="window.addEmoji(event, '😂')">😂</button>
+            <button class="emoji-btn" onclick="window.addEmoji(event, '💀')">💀</button>
+            <button class="emoji-btn" onclick="window.addEmoji(event, '🔥')">🔥</button>
+            <button class="emoji-btn" onclick="window.addEmoji(event, '😭')">😭</button>
+            <button class="emoji-btn" onclick="window.addEmoji(event, '😡')">😡</button>
+            <button class="emoji-btn" onclick="window.addEmoji(event, '👀')">👀</button>
+            <button class="emoji-btn" onclick="window.addEmoji(event, '🤯')">🤯</button>
+            <button class="emoji-btn" onclick="window.addEmoji(event, '🤝')">🤝</button>
+            <button class="emoji-btn" onclick="window.addEmoji(event, '🎉')">🎉</button>
           </div>
           <div class="grid grid-cols-2 gap-1 pt-1 border-t border-[var(--tray-line)]">
-             <button class="chalk-btn side-btn text-xs py-1" style="color:var(--chalk-dim)" onclick="window.addEmoji('GG!')">GG!</button>
-             <button class="chalk-btn side-btn text-xs py-1" style="color:var(--chalk-dim)" onclick="window.addEmoji('WP!')">WP!</button>
+             <button class="chalk-btn side-btn text-xs py-1" style="color:var(--chalk-dim)" onclick="window.addEmoji(event, 'GG!')">GG!</button>
+             <button class="chalk-btn side-btn text-xs py-1" style="color:var(--chalk-dim)" onclick="window.addEmoji(event, 'WP!')">WP!</button>
           </div>
         </div>
 
         <div class="flex gap-1.5 mt-2 flex-shrink-0 relative">
-          <input type="text" id="chatInput" class="native-select flex-1" style="padding: 0.35rem 0.6rem; font-size: 0.75rem;" placeholder="Message..." maxlength="120">
-          <button type="button" onclick="window.toggleEmojiPicker()" class="icon-btn" style="padding: 0.35rem; width: 32px;" aria-label="Emoji">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--chalk-dim)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+          <input type="text" id="chatInput" class="chat-input flex-1 h-[38px]" placeholder="Message..." maxlength="120">
+          <button type="button" onclick="window.toggleEmojiPicker(event)" class="icon-btn w-[38px] h-[38px] p-0 flex-shrink-0 flex items-center justify-center" aria-label="Emoji">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--chalk-dim)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
           </button>
-          <button onclick="window.sendChatMessage()" class="icon-btn" style="padding: 0.35rem 0.6rem;" aria-label="Send">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--chalk-yellow)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          <button onclick="window.sendChatMessage()" class="icon-btn w-[38px] h-[38px] p-0 flex-shrink-0 flex items-center justify-center" aria-label="Send">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--chalk-yellow)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
           </button>
         </div>
       </div>
@@ -1142,14 +1191,14 @@ body {
 
       <div class="flex-shrink-0 pb-1 pt-1">
         <button id="mainActionBtn" onclick="resetGame()" class="chalk-btn btn-primary w-full py-2 sm:py-2.5 text-sm flex-shrink-0 mb-2">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 21v-6h6"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 21v-6h6"/></svg>
           New Game
         </button>
   
         <!-- Replay / Victory Link Button -->
         <button id="shareRecapBtn" onclick="window.handleShareClick()" style="display:none; background:transparent; border:1px solid var(--tray-line); color:var(--chalk);" class="chalk-btn w-full py-2 sm:py-2.5 text-sm flex-shrink-0 hover:bg-[rgba(255,255,255,0.05)] transition-colors">
           <span id="shareRecapText" class="flex items-center justify-center gap-2">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
             Save & Share Replay
           </span>
         </button>
@@ -1194,7 +1243,7 @@ body {
       You will be signed out of your Google account and continue playing as a local guest.
     </p>
     <button id="logoutConfirmBtn" onclick="window.executeLogout()" class="chalk-btn w-full py-2.5 text-sm flex items-center justify-center gap-2 hover:bg-[rgba(244,63,94,0.25)]" style="background: rgba(244, 63, 94, 0.15); color: var(--chalk-pink); border: 1px solid var(--chalk-pink); border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 700; transition: all 0.2s ease;">
-      <svg style="pointer-events:none;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+      <svg width="18" height="18" style="pointer-events:none;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
       <span id="logoutBtnText" style="pointer-events:none;">Confirm Log Out</span>
     </button>
     <button id="logoutCancelBtn" onclick="document.getElementById('logoutModal').classList.remove('open');" class="mt-4 w-full py-2 text-sm" style="font-family: 'JetBrains Mono', monospace; color: var(--chalk-dim); background: transparent; border: none; cursor: pointer; text-decoration: underline;">
@@ -1252,7 +1301,7 @@ body {
 <!-- ========================================= -->
 <!-- LEADERBOARD & SETTINGS DRAWERS            -->
 <!-- ========================================= -->
-<div class="drawer-backdrop" id="settingsBackdrop" onclick="closeAnyDrawer();"></div>
+<div class="drawer-backdrop" id="settingsBackdrop" onclick="window.closeAnyDrawer();"></div>
 
 <div class="settings-drawer" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
   <div class="drawer-header">
@@ -1273,7 +1322,7 @@ body {
           <!-- Avatars populated here via JS -->
         </div>
         
-        <!-- NEW Custom Avatar Upload -->
+        <!-- Custom Avatar Upload -->
         <div class="flex gap-2 mb-4">
           <label for="avatarUpload" class="chalk-btn flex-1 py-2 text-sm text-center block cursor-pointer" style="border: 1px dashed var(--tray-line); color: var(--chalk-dim); transition: all 0.2s;">
             📁 Upload
@@ -1289,7 +1338,7 @@ body {
       </div>
     </div>
 
-    <!-- NEW 7-TIER DIFFICULTY LADDER -->
+    <!-- 7-TIER DIFFICULTY LADDER -->
     <div class="drawer-section">
       <span class="eyebrow block mb-2">Engine Difficulty</span>
       <div class="select-wrap">
@@ -1320,47 +1369,21 @@ body {
   </div>
 </div>
 
+<div class="settings-drawer" id="leaderboardDrawer" role="dialog" aria-modal="true" aria-labelledby="leaderboardTitle">
+  <div class="drawer-header">
+    <h2 id="leaderboardTitle">Global Top 10</h2>
+    <button type="button" class="modal-close-btn" onclick="closeLeaderboard()" aria-label="Close leaderboard">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body" id="leaderboardList">
+    <div class="text-center py-8 text-[var(--chalk-dim)] mono text-sm">
+      Loading rankings...
+    </div>
+  </div>
+</div>
+
 <script>
-// --- SECURE UTF-8 TO BASE64 CONVERTER ---
-function utf8ToBase64(str) {
-  const bytes = new TextEncoder().encode(str);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
-
-// --- OFFLINE-FIRST AVATAR GENERATOR ---
-window.generateAvatarSVG = function(seed) {
-  if (!seed) seed = 'fallback';
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = seed.charCodeAt(i) + ((hash << 5) - hash);
-  const h1 = Math.abs(hash) % 360;
-  const h2 = (Math.abs(hash) + 140) % 360;
-  const c1 = `hsl(${h1}, 70%, 65%)`; 
-  const c2 = `hsl(${h2}, 40%, 25%)`; 
-  const eyeStyle = Math.abs(hash) % 2 === 0 ? 'circle' : 'rect';
-  const mouthStyle = Math.abs(hash) % 3;
-  let eyes = eyeStyle === 'circle' ? `<circle cx="34" cy="42" r="6" fill="#1e332a"/><circle cx="66" cy="42" r="6" fill="#1e332a"/>` : `<rect x="28" y="36" width="12" height="12" rx="3" fill="#1e332a"/><rect x="60" y="36" width="12" height="12" rx="3" fill="#1e332a"/>`;
-  let mouth = mouthStyle === 0 ? `<path d="M 36 62 Q 50 78 64 62" stroke="#1e332a" stroke-width="5" stroke-linecap="round" fill="none"/>` : mouthStyle === 1 ? `<line x1="40" y1="65" x2="60" y2="65" stroke="#1e332a" stroke-width="5" stroke-linecap="round"/>` : `<circle cx="50" cy="65" r="6" fill="#1e332a"/>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="${c2}"/><circle cx="50" cy="50" r="38" fill="${c1}"/>${eyes}${mouth}</svg>`;
-  return `data:image/svg+xml;base64,${utf8ToBase64(svg)}`;
-};
-
-// --- EMOJI AVATAR GENERATOR ---
-window.generateEmojiSVG = function(emoji) {
-  const hue = Math.floor(Math.random() * 360);
-  const bg = `hsl(${hue}, 40%, 25%)`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="${bg}"/><text x="50" y="68" font-size="52" text-anchor="middle" font-family="sans-serif">${emoji}</text></svg>`;
-  return `data:image/svg+xml;base64,${utf8ToBase64(svg)}`;
-};
-
-window.generateRandomEmoji = function() {
-    const emojis = ['🤖','👻','👾','🦊','🐱','🦄','🔥','😎','👽','🤡','🤠','😈','👹','🐒','🐧','🐢','🦖','🐙','🚀','💎'];
-    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
-    const url = window.generateEmojiSVG(randomEmoji);
-    window.selectAvatar(url);
-};
-
 // --- EMOJI PICKER CHAT LOGIC ---
 window.addEventListener('click', (e) => {
   const picker = document.getElementById('emojiPicker');
@@ -1369,11 +1392,14 @@ window.addEventListener('click', (e) => {
   }
 });
 
-window.toggleEmojiPicker = function() {
+// INTERCEPTOR FIX
+window.toggleEmojiPicker = function(e) {
+  if (e) e.stopPropagation();
   document.getElementById('emojiPicker').classList.toggle('hidden');
 };
 
-window.addEmoji = function(char) {
+window.addEmoji = function(e, char) {
+  if (e) e.preventDefault();
   const input = document.getElementById('chatInput');
   input.value += char;
   input.focus();
@@ -1694,6 +1720,7 @@ const SoundFX = (() => {
 
 window.addEventListener('pointerdown', () => SoundFX.unlock(), { once: true });
 
+// ENHANCED: Class-based toggling ensures Tailwind doesn't break
 function toggleSound() {
   const next = !SoundFX.isEnabled();
   SoundFX.setEnabled(next);
@@ -1703,13 +1730,24 @@ function toggleSound() {
 
 function syncSoundUI() {
   const on = SoundFX.isEnabled();
-  document.getElementById('soundIconOn').style.display = on ? "block" : "none";
-  document.getElementById('soundIconOff').style.display = !on ? "block" : "none";
+  const iconOn = document.getElementById('soundIconOn');
+  const iconOff = document.getElementById('soundIconOff');
+  
+  if (on) {
+      iconOn.classList.remove('hidden');
+      iconOff.classList.add('hidden');
+  } else {
+      iconOn.classList.add('hidden');
+      iconOff.classList.remove('hidden');
+  }
+  
   document.getElementById('soundBtn').classList.toggle('muted', !on);
   document.getElementById('soundBtn').setAttribute('aria-pressed', String(on));
+  
   const sw = document.getElementById('soundSwitch');
-  sw.classList.toggle('on', on);
-  document.getElementById('soundToggleRow').setAttribute('aria-pressed', String(on));
+  if (sw) sw.classList.toggle('on', on);
+  const toggleRow = document.getElementById('soundToggleRow');
+  if (toggleRow) toggleRow.setAttribute('aria-pressed', String(on));
 }
 
 let activeThemeKey = (SafeStorage.get('zc_theme') && themes[SafeStorage.get('zc_theme')])
@@ -1798,13 +1836,15 @@ function closeLeaderboard() {
   SoundFX.drawerClose();
 }
 
-function closeAnyDrawer() {
-  if (document.getElementById('settingsModal').classList.contains('open')) closeSettingsModal();
-  if (document.getElementById('leaderboardDrawer').classList.contains('open')) closeLeaderboard();
-}
+window.closeAnyDrawer = function() {
+  const sm = document.getElementById('settingsModal');
+  const ld = document.getElementById('leaderboardDrawer');
+  if (sm && sm.classList.contains('open')) closeSettingsModal();
+  if (ld && ld.classList.contains('open')) closeLeaderboard();
+};
 
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeAnyDrawer();
+  if (e.key === 'Escape') window.closeAnyDrawer();
 });
 
 let mobileSheetCollapsed = false;
@@ -2362,7 +2402,7 @@ function startPvP() {
   gameActive = true;
 
   document.getElementById('gameModeContainer').classList.add('opacity-40', 'pointer-events-none');
-  document.getElementById('evalContainer').style.opacity = '0.3';
+  document.getElementById('evalContainer').style.opacity = '1'; 
   updateActiveModelNote('Disabled (Pass & Play)');
   updateEvalBar(0);
   
@@ -2394,9 +2434,8 @@ window.startOnlineGame = (role, starts, code, opponentName) => {
   gameActive = true;
 
   document.getElementById('gameModeContainer').classList.add('opacity-40', 'pointer-events-none');
-  document.getElementById('evalContainer').style.opacity = '0.3';
+  document.getElementById('evalContainer').style.opacity = '1'; 
   
-  // Show Chat Panel
   document.getElementById('chatPanel').style.display = 'flex';
   
   updateActiveModelNote(`Live Match: Room ${code}`);
@@ -2453,7 +2492,6 @@ function resetGameState() {
   window.isOnlinePvP = false;
   document.getElementById('resumeBtn').classList.add('hidden');
   
-  // Hide and wipe chat
   document.getElementById('chatPanel').style.display = 'none';
   document.getElementById('chatMessages').innerHTML = '';
   window.lastProcessedMsgId = null;
@@ -2473,7 +2511,7 @@ function resetGameState() {
   const shareText = document.getElementById('shareRecapText');
   if (shareText) {
     shareText.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
       Save &amp; Share Replay
     `;
   }
@@ -2794,14 +2832,20 @@ function internalToXSign(internalVal) {
   return 0;
 }
 
+// ENHANCED HEURISTIC: Scans all 81 micro-cells to give a live win% eval bar during PvP
 function estimateHeuristicEval() {
   let score = 0;
-  for (let i = 0; i < 9; i++) {
-    if (macroStatus[i] !== 0 && macroStatus[i] !== 2) {
-      score += internalToXSign(macroStatus[i]);
+  for (let m = 0; m < 9; m++) {
+    if (macroStatus[m] !== 0 && macroStatus[m] !== 2) {
+      score += internalToXSign(macroStatus[m]) * 10;
+    } else if (macroStatus[m] === 0) {
+      for (let u = 0; u < 9; u++) {
+        let val = board[m * 9 + u];
+        if (val !== 0) score += internalToXSign(val);
+      }
     }
   }
-  return Math.max(-1, Math.min(1, score / 3));
+  return Math.max(-1, Math.min(1, score / 30));
 }
 
 window.makeMove = function(idx, player, candidates = null) {
@@ -2812,6 +2856,8 @@ window.makeMove = function(idx, player, candidates = null) {
 
   if (isPvP || window.isOnlinePvP) {
     SoundFX.moveHuman();
+    // LIVE EVAL BAR IN PVP
+    updateEvalBar(estimateHeuristicEval());
   } else {
     if (player === humanInternal) SoundFX.moveHuman(); else SoundFX.moveAI();
   }
@@ -2937,13 +2983,6 @@ window.updateStatus = function(msg, kind = 'default') {
 function updateEvalBar(val) {
   lastEvalValue = val; 
   const valElem = document.getElementById('evalValue');
-  if (isPvP || window.isOnlinePvP) {
-    valElem.textContent = 'PvP Mode';
-    valElem.style.color = 'var(--chalk-dim)';
-    document.getElementById('evalBarX').style.width = `50%`;
-    document.getElementById('evalBarO').style.width = `50%`;
-    return;
-  }
   valElem.textContent = val > 0 ? `+${val.toFixed(2)}` : val.toFixed(2);
   
   if (val > 0.05) valElem.style.color = 'var(--chalk-pink)';
@@ -3174,8 +3213,23 @@ window.onload = () => {
       
       if (window.updateStatus) window.updateStatus("Disconnected. Playing as guest.", "default");
       
+      // Remove Pill styling gracefully
       const aBtn = document.getElementById('authBtn');
       if (aBtn) aBtn.classList.remove('is-auth-pill');
+      const authAvatar = document.getElementById('authAvatar');
+      if (authAvatar) {
+          authAvatar.classList.add('hidden');
+          authAvatar.classList.remove('block');
+      }
+      const authIcon = document.getElementById('authIcon');
+      if (authIcon) {
+          authIcon.classList.remove('hidden');
+          authIcon.classList.add('block');
+      }
+      const authBtnText = document.getElementById('authBtnText');
+      if (authBtnText) {
+          authBtnText.textContent = "Sign In";
+      }
       
       setTimeout(() => { btn.innerHTML = originalHTML; btn.disabled = false; }, 500);
     } catch (err) {
@@ -3283,8 +3337,15 @@ window.onload = () => {
     window.playerProfile.displayName = newName;
     window.playerProfile.photoURL = window.selectedAvatarDraft;
 
-    document.getElementById('authBtnText').textContent = newName.split(' ')[0];
-    document.getElementById('authAvatar').src = window.selectedAvatarDraft;
+    const btnTextElement = document.getElementById('authBtnText');
+    const authAvatar = document.getElementById('authAvatar');
+    
+    if (btnTextElement) btnTextElement.textContent = newName.split(' ')[0];
+    if (authAvatar) {
+        authAvatar.src = window.selectedAvatarDraft;
+        authAvatar.classList.remove('hidden');
+        authAvatar.classList.add('block');
+    }
 
     try {
       await setDoc(doc(db, 'users', currentUser.uid), {
@@ -3332,13 +3393,24 @@ window.onload = () => {
     const authIcon = document.getElementById('authIcon');
     const authBtn = document.getElementById('authBtn');
     
-    if (btnTextElement) btnTextElement.textContent = dName.split(' ')[0];
+    // Explicitly set text
+    if (btnTextElement) {
+        btnTextElement.textContent = dName.split(' ')[0];
+        btnTextElement.classList.remove('hidden');
+        btnTextElement.classList.add('block');
+    }
+    
+    // Explicitly toggle Avatar and Icon
     if (authAvatar) {
       authAvatar.src = dAv;
       authAvatar.classList.remove('hidden');
+      authAvatar.classList.add('block');
+    }
+    if (authIcon) {
+        authIcon.classList.add('hidden');
+        authIcon.classList.remove('block');
     }
     
-    if (authIcon) authIcon.style.display = 'none';
     if (authBtn && !authBtn.classList.contains('is-auth-pill')) {
         authBtn.classList.add('is-auth-pill');
     }
@@ -3492,7 +3564,7 @@ window.onload = () => {
       
       const shareText = document.getElementById('shareRecapText');
       if (shareText) {
-        shareText.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg> Copy Victory Link`;
+        shareText.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg> Copy Victory Link`;
       }
     } catch (e) {}
   };
@@ -3613,7 +3685,9 @@ window.onload = () => {
     const text = input.value.trim();
     if (!text || !activeRoomCode) return;
     input.value = '';
-    window.toggleEmojiPicker(false);
+    
+    const picker = document.getElementById('emojiPicker');
+    if (picker) picker.classList.add('hidden');
     
     const msg = {
       id: Date.now() + Math.random().toString(36).substr(2, 5),
