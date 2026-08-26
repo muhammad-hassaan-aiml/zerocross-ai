@@ -10,8 +10,22 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 
-<!-- Boot Splash (critical, dependency-free) -->
+<!-- Boot Splash & Critical Fallbacks -->
 <style>
+  .hidden { display: none !important; }
+  .flex { display: flex; }
+  .grid { display: grid; }
+  .w-full { width: 100%; }
+  .flex-col { flex-direction: column; }
+  .items-center { align-items: center; }
+  .justify-center { justify-content: center; }
+  .justify-between { justify-content: space-between; }
+  .absolute { position: absolute; }
+  .relative { position: relative; }
+  .flex-shrink-0 { flex-shrink: 0; }
+  .opacity-40 { opacity: 0.4; }
+  .pointer-events-none { pointer-events: none; }
+
   #bootSplash {
     position: fixed;
     inset: 0;
@@ -48,23 +62,17 @@
 
 <script>
   (function () {
-    try {
-      if (window.crossOriginIsolated) return;
-      if (!('serviceWorker' in navigator)) return;
-      if (window.location.search.includes('auth=1')) return; // Auth Mode Bypass
-      
-      var FLAG = 'zc_coi_boot_reload';
-      if (sessionStorage.getItem(FLAG)) return;
-      setTimeout(function () {
-        if (window.crossOriginIsolated) return;
-        try { sessionStorage.setItem(FLAG, '1'); } catch (e) {}
-        window.location.reload();
-      }, 1500);
-    } catch (e) {}
+    const isAuthMode = window.location.search.includes('auth=1');
+    const isRedirecting = sessionStorage.getItem('zc_auth_redirect');
+
+    if (isAuthMode || isRedirecting) return;
+
+    window.coi = { quiet: true }; // Suppress console spam
+    var coiScript = document.createElement('script');
+    coiScript.src = 'coi-serviceworker.js';
+    document.head.appendChild(coiScript);
   })();
 </script>
-
-<script src="coi-serviceworker.js"></script>
 
 <meta name="description" content="Play Ultimate Tic-Tac-Toe against ZeroCross, a self-taught AlphaZero-style engine.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%231e332a'/%3E%3Cg stroke='%23eef0e2' stroke-width='6' stroke-linecap='round'%3E%3Cline x1='34' y1='10' x2='34' y2='90'/%3E%3Cline x1='66' y1='10' x2='66' y2='90'/%3E%3Cline x1='10' y1='34' x2='90' y2='34'/%3E%3Cline x1='10' y1='66' x2='90' y2='66'/%3E%3C/g%3E%3Cg stroke='%23f0a8a0' stroke-width='7' stroke-linecap='round'%3E%3Cline x1='44' y1='44' x2='56' y2='56'/%3E%3Cline x1='56' y1='44' x2='44' y2='56'/%3E%3Ccircle cx='22' cy='22' r='7' fill='none' stroke='%239fd3e8' stroke-width='6'/%3E%3C/svg%3E">
@@ -573,6 +581,7 @@ body {
 }
 .toggle-switch.on .toggle-knob { transform: translateX(17px); }
 
+/* Standard Icon Button */
 .icon-btn {
   display: flex;
   align-items: center;
@@ -595,6 +604,38 @@ body {
 .icon-btn:hover:not(:disabled):not(.sound-btn):not(.history-action):not(.auth-btn):not(.rank-btn) svg { transform: rotate(45deg); }
 .icon-btn.sound-btn:hover svg, .icon-btn.auth-btn:hover svg, .icon-btn.rank-btn:hover svg { transform: none; }
 .icon-btn.sound-btn.muted { color: var(--ink-red); }
+
+/* PERFECTED PROFILE PILL FIX */
+.icon-btn.is-auth-pill {
+    padding: 0.2rem 0.6rem 0.2rem 0.25rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    border-color: transparent;
+}
+.icon-btn.is-auth-pill:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--chalk-dim);
+}
+@media (max-width: 639px) {
+    .icon-btn.is-auth-pill {
+        padding: 0.2rem; /* Transforms into a pure circular button on mobile without a box */
+    }
+}
+
+/* EMOJI MENU CSS */
+.emoji-btn {
+  background: transparent;
+  border: none;
+  font-size: 1.15rem;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.emoji-btn:hover { background: rgba(255, 255, 255, 0.1); }
 
 .active-model-note {
   font-family: 'JetBrains Mono', monospace;
@@ -770,12 +811,14 @@ body {
 /* ========================================= */
 .content > aside,
 #historyList,
+#chatMessages,
 .drawer-body {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
 #historyList,
+#chatMessages,
 .drawer-body {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
@@ -783,12 +826,14 @@ body {
 
 .content > aside::-webkit-scrollbar,
 #historyList::-webkit-scrollbar,
+#chatMessages::-webkit-scrollbar,
 .drawer-body::-webkit-scrollbar {
   width: 6px;
 }
 
 .content > aside::-webkit-scrollbar-track,
 #historyList::-webkit-scrollbar-track,
+#chatMessages::-webkit-scrollbar-track,
 .drawer-body::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.2);
   border-radius: 8px;
@@ -800,6 +845,7 @@ body {
 
 .content > aside::-webkit-scrollbar-thumb,
 #historyList::-webkit-scrollbar-thumb,
+#chatMessages::-webkit-scrollbar-thumb,
 .drawer-body::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
   border-radius: 8px;
@@ -808,6 +854,7 @@ body {
 
 .content > aside::-webkit-scrollbar-thumb:hover,
 #historyList::-webkit-scrollbar-thumb:hover,
+#chatMessages::-webkit-scrollbar-thumb:hover,
 .drawer-body::-webkit-scrollbar-thumb:hover {
   background: var(--chalk-yellow);
 }
@@ -874,7 +921,7 @@ body {
 <div class="app-shell">
   <header class="flex items-center justify-between gap-2 sm:gap-3 px-3.5 pt-2 pb-1 sm:px-5 sm:pt-3 lg:px-8 lg:pt-6 lg:pb-0 flex-shrink-0 relative z-10">
     <div class="flex items-center gap-2.5 min-w-0">
-      <svg viewBox="0 0 100 100" aria-hidden="true" class="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 flex-shrink-0">
+      <svg viewBox="0 0 100 100" aria-hidden="true" class="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 flex-shrink-0" style="width: 28px; height: 28px; min-width: 28px;">
         <rect width="100" height="100" rx="16" fill="var(--board-bg)"/>
         <g stroke="var(--chalk)" stroke-width="6" stroke-linecap="round">
           <line x1="34" y1="10" x2="34" y2="90"/>
@@ -903,7 +950,7 @@ body {
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
           <circle cx="12" cy="7" r="4"></circle>
         </svg>
-        <img id="authAvatar" crossorigin="anonymous" class="hidden w-[14px] h-[14px] rounded-full" src="" alt="Avatar" aria-hidden="true">
+        <img id="authAvatar" class="hidden w-[22px] h-[22px] rounded-full object-cover" src="" alt="Avatar" aria-hidden="true" crossorigin="anonymous" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src=window.generateAvatarSVG('error');">
         <span id="authBtnText" class="hidden sm:inline">Sign In</span>
       </button>
 
@@ -920,19 +967,22 @@ body {
         <span class="hidden sm:inline">Rankings</span>
       </button>
 
+      <!-- Sound Button -->
       <button type="button" class="icon-btn sound-btn" id="soundBtn" onclick="toggleSound()" aria-pressed="true" aria-label="Toggle sound effects">
         <svg id="soundIconOn" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polygon points="4 9 8 9 12 5 12 19 8 15 4 15 4 9"/>
           <path d="M17 8a5 5 0 0 1 0 8"/>
           <path d="M19.5 5.5a9 9 0 0 1 0 13"/>
         </svg>
-        <svg id="soundIconOff" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="hidden">
+        <svg id="soundIconOff" style="display:none;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="hidden">
           <polygon points="4 9 8 9 12 5 12 19 8 15 4 15 4 9"/>
           <line x1="17" y1="9" x2="23" y2="15"/>
           <line x1="23" y1="9" x2="17" y2="15"/>
         </svg>
         <span class="hidden sm:inline">Sound</span>
       </button>
+      
+      <!-- Settings Button -->
       <button type="button" class="icon-btn" id="settingsBtn" onclick="openSettingsModal()" aria-haspopup="dialog" aria-controls="settingsModal">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3"/>
@@ -954,18 +1004,21 @@ body {
       </button>
       
       <div class="tray-panel flex-shrink-0" id="controlPanel">
-        <div id="sideSelectContainer" class="transition-opacity duration-300 opacity-40 pointer-events-none flex flex-col gap-2">
-          <div>
+        <div id="gameModeContainer" class="transition-opacity duration-300 flex flex-col gap-2">
+          
+          <div id="aiModeContainer" class="transition-opacity duration-300 opacity-40 pointer-events-none">
             <span class="eyebrow block mb-1">Play vs Engine</span>
             <div class="grid grid-cols-2 gap-1.5">
               <button onclick="startGame('X')" class="chalk-btn side-btn side-btn-x">Play X</button>
               <button onclick="startGame('O')" class="chalk-btn side-btn side-btn-o">Play O</button>
             </div>
           </div>
-          <div>
+          
+          <div class="mt-1">
             <span class="eyebrow block mb-1">Local Multiplayer</span>
             <button onclick="startPvP()" class="chalk-btn side-btn side-btn-y w-full">Pass &amp; Play</button>
           </div>
+          
           <div class="mt-1">
             <span class="eyebrow block mb-1">Online Multiplayer</span>
             <button onclick="openMultiplayerModal()" class="chalk-btn side-btn w-full flex items-center justify-center gap-2" style="color: var(--chalk-blue); border-color: var(--chalk-blue); background: rgba(159, 211, 232, 0.08);">
@@ -973,6 +1026,7 @@ body {
               Play Online PvP
             </button>
           </div>
+          
         </div>
         <p class="eyebrow mt-2 hidden sm:block" style="text-transform:none; letter-spacing:0;">Coin toss decides who opens the board.</p>
         
@@ -987,7 +1041,7 @@ body {
           <span class="eyebrow">Status</span>
           <span id="moveCount" class="mono text-xs" style="color:var(--chalk-dim)"></span>
         </div>
-        <p id="statusMessage" class="status-text flex items-start status-pending">Loading AI Engine...</p>
+        <p id="statusMessage" class="status-text flex items-start status-pending">Downloading AI Engine (~15MB)... PvP available.</p>
         <p id="statusHint" class="status-hint hidden"></p>
 
         <div id="rosterRow" class="mono text-xs mb-1" style="display:none; color:var(--chalk-dim)"></div>
@@ -1024,6 +1078,46 @@ body {
           <div id="insightsList" class="flex flex-col gap-1">
             <!-- Populated via JS -->
           </div>
+        </div>
+      </div>
+
+      <!-- LIVE CHAT PANEL WITH EMOJI PICKER -->
+      <div class="tray-panel flex-col relative" id="chatPanel" style="display:none; flex: 1 1 140px; min-height: 140px; overflow: visible;">
+        <div class="flex items-center justify-between mb-2 flex-shrink-0">
+          <span class="eyebrow" style="margin:0;">Live Chat</span>
+        </div>
+        
+        <div id="chatMessages" class="flex-1 overflow-y-auto min-h-0 space-y-2 pr-2 pb-1" style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--chalk-dim); word-break: break-word;">
+        </div>
+        
+        <!-- EMOJI PICKER POPUP -->
+        <div id="emojiPicker" class="absolute hidden bottom-[3.25rem] right-2 p-2 bg-[var(--tray)] border border-[var(--tray-line)] rounded-lg shadow-xl z-50">
+          <div class="grid grid-cols-5 gap-1 mb-1">
+            <button class="emoji-btn" onclick="window.addEmoji('👍')">👍</button>
+            <button class="emoji-btn" onclick="window.addEmoji('😂')">😂</button>
+            <button class="emoji-btn" onclick="window.addEmoji('💀')">💀</button>
+            <button class="emoji-btn" onclick="window.addEmoji('🔥')">🔥</button>
+            <button class="emoji-btn" onclick="window.addEmoji('😭')">😭</button>
+            <button class="emoji-btn" onclick="window.addEmoji('😡')">😡</button>
+            <button class="emoji-btn" onclick="window.addEmoji('👀')">👀</button>
+            <button class="emoji-btn" onclick="window.addEmoji('🤯')">🤯</button>
+            <button class="emoji-btn" onclick="window.addEmoji('🤝')">🤝</button>
+            <button class="emoji-btn" onclick="window.addEmoji('🎉')">🎉</button>
+          </div>
+          <div class="grid grid-cols-2 gap-1 pt-1 border-t border-[var(--tray-line)]">
+             <button class="chalk-btn side-btn text-xs py-1" style="color:var(--chalk-dim)" onclick="window.addEmoji('GG!')">GG!</button>
+             <button class="chalk-btn side-btn text-xs py-1" style="color:var(--chalk-dim)" onclick="window.addEmoji('WP!')">WP!</button>
+          </div>
+        </div>
+
+        <div class="flex gap-1.5 mt-2 flex-shrink-0 relative">
+          <input type="text" id="chatInput" class="native-select flex-1" style="padding: 0.35rem 0.6rem; font-size: 0.75rem;" placeholder="Message..." maxlength="120">
+          <button type="button" onclick="window.toggleEmojiPicker()" class="icon-btn" style="padding: 0.35rem; width: 32px;" aria-label="Emoji">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--chalk-dim)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+          </button>
+          <button onclick="window.sendChatMessage()" class="icon-btn" style="padding: 0.35rem 0.6rem;" aria-label="Send">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--chalk-yellow)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </button>
         </div>
       </div>
 
@@ -1133,7 +1227,7 @@ body {
       <div class="mono font-bold text-4xl mb-4 tracking-widest text-center" style="color: var(--chalk-yellow); letter-spacing: 0.25em;" id="hostRoomCode">...</div>
       <div class="flex items-center justify-center gap-2 mb-5">
         <div class="boot-spinner" style="width: 14px; height: 14px; border-width: 2px;"></div>
-        <span class="eyebrow" style="margin:0; text-transform: none;">Waiting for player...</span>
+        <span class="eyebrow" style="margin:0; text-transform: none;" id="mpHostWaitText">Waiting for player...</span>
       </div>
       <button onclick="cancelMatchmaking()" class="chalk-btn w-full py-2 text-sm" style="border: 1px solid var(--ink-red); color: var(--ink-red); background: rgba(193, 73, 90, 0.1);">Cancel Hosting</button>
     </div>
@@ -1174,9 +1268,23 @@ body {
       <div style="background: rgba(0,0,0,0.15); border: 1px solid var(--tray-line); border-radius: 8px; padding: 0.8rem;">
         <input type="text" id="profileNameInput" class="native-select mb-3" style="background: rgba(0,0,0,0.3); border-color: var(--tray-line);" placeholder="Your Username" maxlength="15">
         <span class="eyebrow block mb-2">Avatar</span>
-        <div class="flex gap-2 mb-3 overflow-x-auto pb-1" id="avatarGrid" style="scrollbar-width: none;">
+        
+        <div class="flex items-center gap-2 mb-3 overflow-x-auto pb-1" id="avatarGrid" style="scrollbar-width: none;">
           <!-- Avatars populated here via JS -->
         </div>
+        
+        <!-- NEW Custom Avatar Upload -->
+        <div class="flex gap-2 mb-4">
+          <label for="avatarUpload" class="chalk-btn flex-1 py-2 text-sm text-center block cursor-pointer" style="border: 1px dashed var(--tray-line); color: var(--chalk-dim); transition: all 0.2s;">
+            📁 Upload
+          </label>
+          <input type="file" id="avatarUpload" accept="image/*" class="hidden" onchange="window.handleAvatarUpload(event)">
+          
+          <button type="button" onclick="window.generateRandomEmoji()" class="chalk-btn flex-1 py-2 text-sm text-center" style="border: 1px dashed var(--tray-line); color: var(--chalk-dim); transition: all 0.2s;">
+            🎲 Emoji
+          </button>
+        </div>
+
         <button type="button" id="saveProfileBtn" onclick="window.saveProfile()" class="chalk-btn side-btn side-btn-y w-full">Save Profile</button>
       </div>
     </div>
@@ -1212,43 +1320,94 @@ body {
   </div>
 </div>
 
-<div class="settings-drawer" id="leaderboardDrawer" role="dialog" aria-modal="true" aria-labelledby="leaderboardTitle">
-  <div class="drawer-header">
-    <h2 id="leaderboardTitle">Global Top 10</h2>
-    <button type="button" class="modal-close-btn" onclick="closeLeaderboard()" aria-label="Close leaderboard">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-    </button>
-  </div>
-  <div class="drawer-body" id="leaderboardList">
-    <div class="text-center py-8 text-[var(--chalk-dim)] mono text-sm">
-      Loading rankings...
-    </div>
-  </div>
-</div>
-
 <script>
-let board = new Array(81).fill(0);
-let macroStatus = new Array(9).fill(0);
-let activeGrid = -1;
-let humanInternal = 1;
-let aiInternal = -1;
-let humanSymbol = 'X';
-let aiSymbol = 'O';
-let currentTurn = 1;
-let gameActive = false;
-let isPvP = false;
-let lastMoveIdx = -1;
-let moveCount = 0;
-let freeMoveRule = false;
+// --- SECURE UTF-8 TO BASE64 CONVERTER ---
+function utf8ToBase64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
 
-let currentGameId = 0; 
-let engineWorker = null;
-let engineReady = false;
-let engineMode = 'wasm'; 
-let aiTimeoutId = null;
-let engineInitTimeoutId = null;
+// --- OFFLINE-FIRST AVATAR GENERATOR ---
+window.generateAvatarSVG = function(seed) {
+  if (!seed) seed = 'fallback';
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  const h1 = Math.abs(hash) % 360;
+  const h2 = (Math.abs(hash) + 140) % 360;
+  const c1 = `hsl(${h1}, 70%, 65%)`; 
+  const c2 = `hsl(${h2}, 40%, 25%)`; 
+  const eyeStyle = Math.abs(hash) % 2 === 0 ? 'circle' : 'rect';
+  const mouthStyle = Math.abs(hash) % 3;
+  let eyes = eyeStyle === 'circle' ? `<circle cx="34" cy="42" r="6" fill="#1e332a"/><circle cx="66" cy="42" r="6" fill="#1e332a"/>` : `<rect x="28" y="36" width="12" height="12" rx="3" fill="#1e332a"/><rect x="60" y="36" width="12" height="12" rx="3" fill="#1e332a"/>`;
+  let mouth = mouthStyle === 0 ? `<path d="M 36 62 Q 50 78 64 62" stroke="#1e332a" stroke-width="5" stroke-linecap="round" fill="none"/>` : mouthStyle === 1 ? `<line x1="40" y1="65" x2="60" y2="65" stroke="#1e332a" stroke-width="5" stroke-linecap="round"/>` : `<circle cx="50" cy="65" r="6" fill="#1e332a"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="${c2}"/><circle cx="50" cy="50" r="38" fill="${c1}"/>${eyes}${mouth}</svg>`;
+  return `data:image/svg+xml;base64,${utf8ToBase64(svg)}`;
+};
 
-let currentReplayId = null; // Stored if victory was auto-saved
+// --- EMOJI AVATAR GENERATOR ---
+window.generateEmojiSVG = function(emoji) {
+  const hue = Math.floor(Math.random() * 360);
+  const bg = `hsl(${hue}, 40%, 25%)`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="${bg}"/><text x="50" y="68" font-size="52" text-anchor="middle" font-family="sans-serif">${emoji}</text></svg>`;
+  return `data:image/svg+xml;base64,${utf8ToBase64(svg)}`;
+};
+
+window.generateRandomEmoji = function() {
+    const emojis = ['🤖','👻','👾','🦊','🐱','🦄','🔥','😎','👽','🤡','🤠','😈','👹','🐒','🐧','🐢','🦖','🐙','🚀','💎'];
+    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+    const url = window.generateEmojiSVG(randomEmoji);
+    window.selectAvatar(url);
+};
+
+// --- EMOJI PICKER CHAT LOGIC ---
+window.addEventListener('click', (e) => {
+  const picker = document.getElementById('emojiPicker');
+  if (picker && !picker.classList.contains('hidden') && !e.target.closest('#emojiPicker') && !e.target.closest('button[aria-label="Emoji"]')) {
+    picker.classList.add('hidden');
+  }
+});
+
+window.toggleEmojiPicker = function() {
+  document.getElementById('emojiPicker').classList.toggle('hidden');
+};
+
+window.addEmoji = function(char) {
+  const input = document.getElementById('chatInput');
+  input.value += char;
+  input.focus();
+};
+
+var board = new Array(81).fill(0);
+var macroStatus = new Array(9).fill(0);
+var activeGrid = -1;
+
+// Base States
+var humanInternal = 1;
+var aiInternal = -1;
+var humanSymbol = 'X';
+var aiSymbol = 'O';
+var currentTurn = 1;
+var gameActive = false;
+var isPvP = false;
+var lastMoveIdx = -1;
+var moveCount = 0;
+var freeMoveRule = false;
+
+// Online PvP States
+var isOnlinePvP = false;
+var onlineRole = null; 
+var lastProcessedMsgId = null;
+
+var currentGameId = 0; 
+var engineWorker = null;
+var engineReady = false;
+var engineMode = 'wasm'; 
+var aiTimeoutId = null;
+var engineInitTimeoutId = null;
+
+var currentReplayId = null; 
 
 const SafeStorage = {
   get(key, fallback = null) {
@@ -1296,12 +1455,11 @@ let cellElems = new Array(81);
 let macroElems = new Array(9);
 let macroOverlayElems = new Array(9);
 
-let moveHistory = [];
-let viewingHistoryIdx = -1;
-let lastEvalValue = 0;
-let isScrubbing = false;
+var moveHistory = [];
+var viewingHistoryIdx = -1;
+var lastEvalValue = 0;
+var isScrubbing = false;
 
-// 7-TIER ZEROSCORE DIFFICULTY LADDER (1:1 SIMS TO WIN XP)
 const diffConfig = {
   '10': { sims: 10, w: 10, d: 2, l: 0, name: 'Beginner' },
   '25': { sims: 25, w: 25, d: 5, l: 0, name: 'Novice' },
@@ -1323,7 +1481,7 @@ window.getReplayData = () => {
     moves: compressedMoves,
     starts: startedBy,
     humanSymbol: humanSymbol,
-    difficulty: diffConfig[currentDifficulty].name,
+    difficulty: isOnlinePvP ? 'Online PvP' : diffConfig[currentDifficulty].name,
     winner: checkSubGridWin(macroStatus)
   };
 };
@@ -1545,8 +1703,8 @@ function toggleSound() {
 
 function syncSoundUI() {
   const on = SoundFX.isEnabled();
-  document.getElementById('soundIconOn').classList.toggle('hidden', !on);
-  document.getElementById('soundIconOff').classList.toggle('hidden', on);
+  document.getElementById('soundIconOn').style.display = on ? "block" : "none";
+  document.getElementById('soundIconOff').style.display = !on ? "block" : "none";
   document.getElementById('soundBtn').classList.toggle('muted', !on);
   document.getElementById('soundBtn').setAttribute('aria-pressed', String(on));
   const sw = document.getElementById('soundSwitch');
@@ -1702,9 +1860,6 @@ function toggleMobileSheet() {
 
 function initBoardOffsetTracking() {
   const recalc = () => {
-    document.body.style.display = 'none';
-    document.body.offsetHeight; 
-    document.body.style.display = '';
     updateBoardOffset();
   };
 
@@ -1712,20 +1867,15 @@ function initBoardOffsetTracking() {
     document.fonts.ready.then(recalc);
   }
 
-  if ('ResizeObserver' in window) {
-    const ro = new ResizeObserver(() => updateBoardOffset());
-    ro.observe(document.body);
-  }
-
   let resizeTimer = null;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(updateBoardOffset, 100);
+    resizeTimer = setTimeout(updateBoardOffset, 150);
   });
 
   window.addEventListener('orientationchange', () => {
-    setTimeout(recalc, 100);
-    setTimeout(recalc, 400);
+    setTimeout(recalc, 150);
+    setTimeout(recalc, 500);
   });
 }
 
@@ -1841,7 +1991,7 @@ function stampMarkup(status, macroIdx) {
 
 function enableControls(msg = 'Ready — pick a side or mode.', kind = 'good') {
   updateStatus(msg, kind);
-  document.getElementById('sideSelectContainer').classList.remove('opacity-40', 'pointer-events-none');
+  document.getElementById('aiModeContainer').classList.remove('opacity-40', 'pointer-events-none');
 }
 
 function createBoard() {
@@ -1907,7 +2057,6 @@ function restoreState(state) {
   renderInsights(state.candidates);
 }
 
-// Rebuilds history safely from compressed Cloud Replay data
 window.applyReplayData = (data) => {
   resetGameState(); 
   
@@ -1959,7 +2108,7 @@ window.applyReplayData = (data) => {
   isPvP = false; 
   gameActive = false;
   
-  document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
+  document.getElementById('gameModeContainer').classList.add('opacity-40', 'pointer-events-none');
   document.getElementById('historyPanel').style.display = 'flex';
   
   const mainBtn = document.getElementById('mainActionBtn');
@@ -2027,7 +2176,7 @@ function viewHistory(index) {
   }
   
   if (!isReplayMode) {
-      document.getElementById('shareRecapBtn').style.display = (!isScrubbing && !gameActive) ? 'block' : 'none';
+      document.getElementById('shareRecapBtn').style.display = (!isScrubbing && !gameActive && !window.isOnlinePvP) ? 'block' : 'none';
   }
   
   updateBoardUI();
@@ -2036,6 +2185,7 @@ function viewHistory(index) {
 
 function resumeFromHistory() {
   if (!isScrubbing) return;
+  if (window.isOnlinePvP) return; 
   
   currentGameId++; 
   moveHistory = moveHistory.slice(0, viewingHistoryIdx + 1);
@@ -2059,13 +2209,13 @@ function resumeFromHistory() {
 }
 
 function undoMove() {
-  if (viewingHistoryIdx <= 0) return;
+  if (viewingHistoryIdx <= 0 || window.isOnlinePvP) return;
   viewHistory(viewingHistoryIdx - 1);
   SoundFX.click();
 }
 
 function redoMove() {
-  if (viewingHistoryIdx >= moveHistory.length - 1) return;
+  if (viewingHistoryIdx >= moveHistory.length - 1 || window.isOnlinePvP) return;
   viewHistory(viewingHistoryIdx + 1);
   SoundFX.click();
 }
@@ -2093,7 +2243,12 @@ function renderHistory() {
     
     const item = document.createElement('button');
     item.className = `history-item ${isX ? 'history-x' : 'history-o'} ${i === viewingHistoryIdx ? 'active-view' : ''}`;
-    item.onclick = () => { viewHistory(i); SoundFX.click(); };
+    
+    if (!window.isOnlinePvP) {
+       item.onclick = () => { viewHistory(i); SoundFX.click(); };
+    } else {
+       item.style.cursor = 'default';
+    }
     
     item.innerHTML = `
       <span><span class="move-player">${playerMark}</span>. ${moveStr}</span>
@@ -2112,8 +2267,13 @@ function renderHistory() {
   const undoBtn = document.getElementById('undoBtn');
   const redoBtn = document.getElementById('redoBtn');
   
-  undoBtn.disabled = viewingHistoryIdx <= 0;
-  redoBtn.disabled = viewingHistoryIdx >= moveHistory.length - 1;
+  if (window.isOnlinePvP) {
+      undoBtn.disabled = true;
+      redoBtn.disabled = true;
+  } else {
+      undoBtn.disabled = viewingHistoryIdx <= 0;
+      redoBtn.disabled = viewingHistoryIdx >= moveHistory.length - 1;
+  }
   
   [undoBtn, redoBtn].forEach(btn => {
     if (btn.disabled) {
@@ -2130,7 +2290,7 @@ function renderInsights(candidates) {
   const container = document.getElementById('insightsContainer');
   const list = document.getElementById('insightsList');
   
-  if (!candidates || candidates.length === 0 || isPvP) {
+  if (!candidates || candidates.length === 0 || isPvP || window.isOnlinePvP) {
     container.style.display = 'none';
     return;
   }
@@ -2157,18 +2317,19 @@ function renderInsights(candidates) {
 
 function startGame(selectedSymbol) {
   if (!engineReady) return;
+  resetGameState();
+  
   isPvP = false;
+  window.isOnlinePvP = false;
   humanSymbol = selectedSymbol;
   aiSymbol = selectedSymbol === 'X' ? 'O' : 'X';
-
-  resetGameState();
 
   humanInternal = Math.random() < 0.5 ? 1 : -1;
   aiInternal = -humanInternal;
   currentTurn = 1;
   gameActive = true;
 
-  document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
+  document.getElementById('gameModeContainer').classList.add('opacity-40', 'pointer-events-none');
   document.getElementById('evalContainer').style.opacity = '1';
   updateActiveModelNote(engineMode === 'wasm' ? 'best_model.onnx (Web Worker)' : 'Basic AI (Offline/Fallback)');
   
@@ -2188,19 +2349,19 @@ function startGame(selectedSymbol) {
 }
 
 function startPvP() {
-  if (!engineReady) return; 
+  resetGameState();
+  
   isPvP = true;
+  window.isOnlinePvP = false;
   humanSymbol = 'X';
   aiSymbol = 'O';
-
-  resetGameState();
 
   humanInternal = 1;
   aiInternal = -1;
   currentTurn = Math.random() < 0.5 ? 1 : -1;
   gameActive = true;
 
-  document.getElementById('sideSelectContainer').classList.add('opacity-40', 'pointer-events-none');
+  document.getElementById('gameModeContainer').classList.add('opacity-40', 'pointer-events-none');
   document.getElementById('evalContainer').style.opacity = '0.3';
   updateActiveModelNote('Disabled (Pass & Play)');
   updateEvalBar(0);
@@ -2217,10 +2378,57 @@ function startPvP() {
   setMobileSheetCollapsed(true);
 }
 
+window.startOnlineGame = (role, starts, code, opponentName) => {
+  resetGameState(); 
+
+  isPvP = false;
+  window.isOnlinePvP = true;
+  window.onlineRole = role; 
+  
+  humanSymbol = role === 1 ? 'X' : 'O';
+  aiSymbol = role === 1 ? 'O' : 'X';
+
+  humanInternal = role;
+  aiInternal = -role;
+  currentTurn = starts;
+  gameActive = true;
+
+  document.getElementById('gameModeContainer').classList.add('opacity-40', 'pointer-events-none');
+  document.getElementById('evalContainer').style.opacity = '0.3';
+  
+  // Show Chat Panel
+  document.getElementById('chatPanel').style.display = 'flex';
+  
+  updateActiveModelNote(`Live Match: Room ${code}`);
+  updateEvalBar(0);
+  
+  const rosterRow = document.getElementById('rosterRow');
+  rosterRow.innerHTML = `You <span class="mark-chip ${humanSymbol === 'X' ? 'chip-x' : 'chip-o'}">${humanSymbol}</span> &nbsp;·&nbsp; ${opponentName} <span class="mark-chip ${aiSymbol === 'X' ? 'chip-x' : 'chip-o'}">${aiSymbol}</span>`;
+  rosterRow.style.display = 'block';
+  document.getElementById('statsRow').style.display = 'none';
+
+  SoundFX.click();
+  pushState();
+
+  if (currentTurn === window.onlineRole) {
+    updateStatus('Your move!', 'active');
+  } else {
+    updateStatus('Waiting for opponent...', 'pending');
+  }
+  
+  updateBoardUI();
+  setMobileSheetCollapsed(true);
+  if (window.closeMultiplayerModal) window.closeMultiplayerModal();
+};
+
 function resetGame() {
+  if (window.cancelMatchmaking) window.cancelMatchmaking();
   resetGameState();
   updateBoardUI();
   updateEvalBar(0);
+  
+  document.getElementById('gameModeContainer').classList.remove('opacity-40', 'pointer-events-none');
+  
   if (engineReady) {
     if (engineMode === 'fallback') {
       enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
@@ -2228,8 +2436,10 @@ function resetGame() {
       enableControls('Ready — pick a side or mode.', 'good');
     }
   } else {
-    updateStatus("Downloading AI Engine (~15MB)...", "pending");
+    document.getElementById('aiModeContainer').classList.add('opacity-40', 'pointer-events-none');
+    updateStatus("Downloading AI Engine (~15MB)... PvP available.", "pending");
   }
+  
   document.getElementById('rosterRow').style.display = 'none';
   document.getElementById('statsRow').style.display = 'none';
   setMobileSheetCollapsed(false);
@@ -2240,7 +2450,13 @@ function resetGameState() {
   currentGameId++; 
   clearTimeout(aiTimeoutId);
   isScrubbing = false;
+  window.isOnlinePvP = false;
   document.getElementById('resumeBtn').classList.add('hidden');
+  
+  // Hide and wipe chat
+  document.getElementById('chatPanel').style.display = 'none';
+  document.getElementById('chatMessages').innerHTML = '';
+  window.lastProcessedMsgId = null;
   
   board.fill(0);
   macroStatus.fill(0);
@@ -2280,7 +2496,7 @@ window.updateStatsUI = function() {
 };
 
 window.saveStats = function(result) {
-  if (isPvP) return;
+  if (isPvP || window.isOnlinePvP) return; 
   
   const pts = diffConfig[currentDifficulty];
   if (typeof window.gameStats.score === 'undefined') window.gameStats.score = 0;
@@ -2296,7 +2512,6 @@ window.saveStats = function(result) {
       window.gameStats.score += pts.d; 
   }
 
-  // Never drop below 0 XP
   window.gameStats.score = Math.max(0, window.gameStats.score);
 
   SafeStorage.set('zc_stats', JSON.stringify(window.gameStats));
@@ -2310,7 +2525,7 @@ function updateRoster() {
     rosterRow.innerHTML = `Player 1 <span class="mark-chip chip-x">X</span> &nbsp;·&nbsp; Player 2 <span class="mark-chip chip-o">O</span>`;
     statsRow.style.display = 'none';
     rosterRow.classList.add('mb-1');
-  } else {
+  } else if (!window.isOnlinePvP) {
     rosterRow.innerHTML = `You <span id="rosterYouMark" class="mark-chip ${humanSymbol === 'X' ? 'chip-x' : 'chip-o'}">${humanSymbol}</span> &nbsp;·&nbsp; Engine <span id="rosterAiMark" class="mark-chip ${aiSymbol === 'X' ? 'chip-x' : 'chip-o'}">${aiSymbol}</span>`;
     window.updateStatsUI();
     statsRow.style.display = 'flex';
@@ -2330,7 +2545,7 @@ function updateBoardUI() {
     }
 
     let macroClass = 'macro-grid';
-    if (isMacroActive && (isPvP || currentTurn === humanInternal)) {
+    if (isMacroActive && (isPvP || (window.isOnlinePvP && currentTurn === window.onlineRole) || (!isPvP && !window.isOnlinePvP && currentTurn === humanInternal))) {
       macroClass += ' macro-active';
     } else if (gameActive && !isMacroActive && macroStatus[m] === 0) {
       macroClass += ' macro-inactive';
@@ -2378,7 +2593,13 @@ function updateBoardUI() {
           cellElem.innerHTML = '';
           cellElem.dataset.rendered = '';
         }
-        cellElem.disabled = !gameActive || !isMacroActive || (!isPvP && currentTurn !== humanInternal) || isScrubbing;
+        
+        let isMyTurn = false;
+        if (isPvP) isMyTurn = true;
+        else if (window.isOnlinePvP) isMyTurn = (currentTurn === window.onlineRole);
+        else isMyTurn = (currentTurn === humanInternal);
+
+        cellElem.disabled = !gameActive || !isMacroActive || !isMyTurn || isScrubbing;
       }
       cellElem.className = cellClass;
     }
@@ -2387,7 +2608,8 @@ function updateBoardUI() {
 
 async function handleHumanMove(macro, micro) {
   if (!gameActive) return;
-  if (!isPvP && currentTurn !== humanInternal) return;
+  if (window.isOnlinePvP && currentTurn !== window.onlineRole) return; 
+  if (!isPvP && !window.isOnlinePvP && currentTurn !== humanInternal) return; 
 
   const idx = macro * 9 + micro;
   if (board[idx] !== 0 || macroStatus[macro] !== 0) return;
@@ -2403,16 +2625,26 @@ async function handleHumanMove(macro, micro) {
 
   if (!mobileSheetCollapsed) setMobileSheetCollapsed(true, { hint: false });
 
-  makeMove(idx, currentTurn);
-  if (checkGameOver()) return;
+  const playerMakingMove = currentTurn;
 
-  if (isPvP) {
+  window.makeMove(idx, playerMakingMove);
+
+  if (window.isOnlinePvP && window.syncMoveToCloud) {
+     window.syncMoveToCloud(idx, playerMakingMove);
+  }
+
+  if (window.checkGameOver()) return;
+
+  if (window.isOnlinePvP) {
+    window.updateStatus('Opponent is thinking...', 'pending');
+    window.updateBoardUI();
+  } else if (isPvP) {
     const nextMark = currentTurn === 1 ? 'X' : 'O';
-    updateStatus(`${nextMark}'s turn.`, 'active');
-    updateBoardUI();
+    window.updateStatus(`${nextMark}'s turn.`, 'active');
+    window.updateBoardUI();
   } else {
-    updateStatus('Engine is thinking...', 'pending');
-    updateBoardUI();
+    window.updateStatus('Engine is thinking...', 'pending');
+    window.updateBoardUI();
     aiTimeoutId = setTimeout(triggerAIMove, 450);
   }
 }
@@ -2572,13 +2804,13 @@ function estimateHeuristicEval() {
   return Math.max(-1, Math.min(1, score / 3));
 }
 
-function makeMove(idx, player, candidates = null) {
+window.makeMove = function(idx, player, candidates = null) {
   board[idx] = player;
   lastMoveIdx = idx;
   moveCount++;
   updateMoveCount();
 
-  if (isPvP) {
+  if (isPvP || window.isOnlinePvP) {
     SoundFX.moveHuman();
   } else {
     if (player === humanInternal) SoundFX.moveHuman(); else SoundFX.moveAI();
@@ -2605,7 +2837,7 @@ function makeMove(idx, player, candidates = null) {
 
   renderInsights(candidates);
   pushState(idx, player, candidates);
-}
+};
 
 function checkSubGridWin(grid) {
   const patterns = [
@@ -2622,13 +2854,13 @@ function checkSubGridWin(grid) {
   return 0;
 }
 
-function checkGameOver() {
+window.checkGameOver = function() {
   const winner = checkSubGridWin(macroStatus);
   if (winner !== 0) {
     gameActive = false;
     if (moveHistory.length > 0) moveHistory[moveHistory.length - 1].gameActive = false;
     
-    if (isPvP) {
+    if (isPvP || window.isOnlinePvP) {
       if (winner === 1) { updateStatus('X wins the game!', 'good'); SoundFX.gameWin(); }
       else if (winner === -1) { updateStatus('O wins the game!', 'good'); SoundFX.gameWin(); }
       else { updateStatus("Board's full — a draw.", 'default'); SoundFX.gameDraw(); }
@@ -2637,11 +2869,7 @@ function checkGameOver() {
         updateStatus('You won this one.', 'good'); 
         SoundFX.gameWin(); 
         window.saveStats('win');
-        
-        // Auto-save victory if logged in
-        if (window.triggerAutoSaveVictory) {
-          window.triggerAutoSaveVictory();
-        }
+        if (window.triggerAutoSaveVictory) window.triggerAutoSaveVictory();
       }
       else if (winner === aiInternal) { 
         updateStatus('Engine won this one.', 'bad'); 
@@ -2653,12 +2881,11 @@ function checkGameOver() {
         SoundFX.gameDraw(); 
         window.saveStats('draw');
       }
-      
       if (window.showAuthPromoIfGuest) window.showAuthPromoIfGuest();
     }
     
     const isReplayMode = new URLSearchParams(window.location.search).has('replay');
-    if (!isReplayMode) {
+    if (!isReplayMode && !window.isOnlinePvP) {
       document.getElementById('shareRecapBtn').style.display = 'block';
     }
     
@@ -2667,12 +2894,20 @@ function checkGameOver() {
     return true;
   }
   return false;
-}
+};
 
 function updateHint() {
   const el = document.getElementById('statusHint');
   if (!el) return;
-  if (gameActive && freeMoveRule && (isPvP || currentTurn === humanInternal) && !isScrubbing) {
+  
+  let showHint = false;
+  if (gameActive && freeMoveRule && !isScrubbing) {
+      if (isPvP) showHint = true;
+      else if (window.isOnlinePvP) showHint = (currentTurn === window.onlineRole);
+      else showHint = (currentTurn === humanInternal);
+  }
+
+  if (showHint) {
     el.textContent = 'Sent to a finished board — play anywhere open.';
     el.classList.remove('hidden');
   } else {
@@ -2681,7 +2916,7 @@ function updateHint() {
   }
 }
 
-function updateStatus(msg, kind = 'default') {
+window.updateStatus = function(msg, kind = 'default') {
   const el = document.getElementById('statusMessage');
   
   el.innerHTML = '';
@@ -2697,12 +2932,12 @@ function updateStatus(msg, kind = 'default') {
     handleText.textContent = msg;
     handleText.className = 'handle-text status-' + kind;
   }
-}
+};
 
 function updateEvalBar(val) {
   lastEvalValue = val; 
   const valElem = document.getElementById('evalValue');
-  if (isPvP) {
+  if (isPvP || window.isOnlinePvP) {
     valElem.textContent = 'PvP Mode';
     valElem.style.color = 'var(--chalk-dim)';
     document.getElementById('evalBarX').style.width = `50%`;
@@ -2723,7 +2958,7 @@ function updateEvalBar(val) {
 async function initEngine() {
   try {
     if (!document.getElementById('authModal').classList.contains('open') && !document.getElementById('logoutModal').classList.contains('open')) {
-      updateStatus("Downloading AI Engine (~15MB)...", "pending");
+      updateStatus("Downloading AI Engine (~15MB)... PvP available.", "pending");
     }
     
     if (!window.Worker) throw new Error("Web Workers not supported");
@@ -2743,11 +2978,11 @@ async function initEngine() {
         
         if (!document.getElementById('authModal').classList.contains('open') && !document.getElementById('logoutModal').classList.contains('open')) {
           if (!new URLSearchParams(window.location.search).has('replay')) {
-            if (!gameActive) {
+            if (!gameActive && !window.isOnlinePvP) {
               enableControls('Ready — pick a side or mode.', 'good');
-            } else {
+            } else if (!window.isOnlinePvP && !isPvP) {
               const currentActorText = currentTurn === humanInternal ? 'Your move.' : 'Engine is thinking...';
-              updateStatus(isPvP ? (currentTurn === 1 ? "X's turn." : "O's turn.") : currentActorText, 'active');
+              updateStatus(currentActorText, 'active');
             }
           }
         }
@@ -2784,7 +3019,7 @@ function fallbackInit(e) {
   updateActiveModelNote('Basic AI (Offline/Fallback)');
   
   if (!document.getElementById('authModal').classList.contains('open') && !document.getElementById('logoutModal').classList.contains('open')) {
-    if (!gameActive && !new URLSearchParams(window.location.search).has('replay')) {
+    if (!gameActive && !window.isOnlinePvP && !new URLSearchParams(window.location.search).has('replay')) {
       enableControls('Ready (Using Basic AI due to network/browser issue).', 'pending');
     }
   }
@@ -2824,6 +3059,13 @@ window.onload = () => {
   updateMoveCount();
   initEngine();
 
+  const chatInput = document.getElementById('chatInput');
+  if (chatInput) {
+      chatInput.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') window.sendChatMessage();
+      });
+  }
+
   try {
     applyThemeVariables(themes[activeThemeKey].vars);
     applyThemeColorMeta(themes[activeThemeKey].vars);
@@ -2837,22 +3079,13 @@ window.onload = () => {
 
   scheduleReveal();
 };
-
-// Register PWA Service Worker
-if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then((reg) => console.log('PWA ServiceWorker registered successfully:', reg.scope))
-      .catch((err) => console.log('PWA ServiceWorker registration failed:', err));
-  });
-}
 </script>
 
 <!-- Firebase Authentication and Database Sync Core -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-  import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc, collection, query, orderBy, limit, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import { getFirestore, doc, setDoc, getDoc, collection, query, orderBy, limit, getDocs, addDoc, onSnapshot, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCeoJvlbABPrnxPY_N8rL_bx0yrE4VrWQs",
@@ -2873,7 +3106,6 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
   let isSigningIn = false;
 
   const authBtn = document.getElementById('authBtn');
-  const btnText = document.getElementById('authBtnText');
   if (authBtn) authBtn.disabled = true;
 
   const authModal = document.getElementById('authModal');
@@ -2907,7 +3139,7 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
       await signInWithPopup(auth, provider);
       window.location.href = window.location.pathname; 
     } catch (error) {
-      console.error("Popup Auth Error:", error);
+      console.error("Auth Error:", error);
       const msg = describeAuthError(error);
       
       if (msg) {
@@ -2932,6 +3164,7 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
     btn.innerHTML = "Signing out...";
     btn.disabled = true;
     try {
+      window.cancelMatchmaking(); 
       await signOut(auth);
       window.gameStats = { w: 0, l: 0, d: 0, score: 0 };
       window.SafeStorage.set('zc_stats', JSON.stringify(window.gameStats));
@@ -2940,6 +3173,10 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
       logoutModal.classList.remove('open');
       
       if (window.updateStatus) window.updateStatus("Disconnected. Playing as guest.", "default");
+      
+      const aBtn = document.getElementById('authBtn');
+      if (aBtn) aBtn.classList.remove('is-auth-pill');
+      
       setTimeout(() => { btn.innerHTML = originalHTML; btn.disabled = false; }, 500);
     } catch (err) {
       btn.innerHTML = "Failed. Try again.";
@@ -2952,43 +3189,87 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
     if (currentUser && currentUser.isAnonymous) {
       if (!window.location.search.includes('auth=1')) {
         if (window.updateStatus) window.updateStatus("Preparing secure login...", 'pending');
-        window.location.href = "?auth=1";
+        
+        if ('serviceWorker' in navigator) {
+          try {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (let reg of regs) {
+              await reg.unregister();
+            }
+          } catch(e) {}
+        }
+        
+        setTimeout(() => {
+            window.location.href = "?auth=1";
+        }, 150);
       }
     } else if (currentUser) {
       logoutModal.classList.add('open');
     }
   };
 
-  // --- AVATAR & PROFILE LOGIC ---
-  const presetSeeds = ['Mimi', 'Felix', 'Jack', 'Max', 'Luna'];
+  // --- AVATAR UPLOAD & SELECTION ---
+  window.handleAvatarUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 120;
+        let w = img.width, h = img.height;
+        
+        if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } }
+        else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
+        
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        
+        const b64 = canvas.toDataURL('image/jpeg', 0.8);
+        window.selectAvatar(b64);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
   
-  window.renderAvatarGrid = (selectedAv, googleAv) => {
+  window.renderAvatarGrid = (selectedAv) => {
     const grid = document.getElementById('avatarGrid');
     if (!grid) return;
     
-    let html = '';
-    const options = presetSeeds.map(s => `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${s}`);
+    const presetSeeds = ['Mimi', 'Felix'];
+    const presetEmojis = ['😎', '🤖', '🦊'];
     
-    if (currentUser) options.unshift(`https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${currentUser.uid}`);
-    if (googleAv) options.unshift(googleAv);
+    let options = presetSeeds.map(s => window.generateAvatarSVG(s));
+    presetEmojis.forEach(e => options.push(window.generateEmojiSVG(e)));
+    
+    if (currentUser) options.unshift(window.generateAvatarSVG(currentUser.uid));
 
     const uniqueOptions = [...new Set(options)].slice(0, 6);
-    if (!uniqueOptions.includes(selectedAv)) uniqueOptions.unshift(selectedAv);
+    
+    if (selectedAv && !uniqueOptions.includes(selectedAv)) {
+        uniqueOptions.unshift(selectedAv);
+        uniqueOptions.pop();
+    }
 
-    uniqueOptions.slice(0, 6).forEach(url => {
+    let html = '';
+    uniqueOptions.forEach(url => {
       const isSelected = (url === selectedAv);
       html += `
-        <button type="button" onclick="selectAvatar('${url}')" style="width: 42px; height: 42px; border-radius: 50%; border: 2px solid ${isSelected ? 'var(--chalk-yellow)' : 'transparent'}; overflow: hidden; flex-shrink: 0; background: var(--wood-dark); transition: border-color 0.2s; padding:0;">
-          <img src="${url}" crossorigin="anonymous" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+        <button type="button" onclick="window.selectAvatar('${url}')" style="width: 46px; height: 46px; border-radius: 50%; border: 2px solid ${isSelected ? 'var(--chalk-yellow)' : 'transparent'}; overflow: hidden; flex-shrink: 0; background: var(--wood-dark); transition: border-color 0.2s; padding:0;">
+          <img src="${url}" crossorigin="anonymous" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src=window.generateAvatarSVG('error');" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
         </button>
       `;
     });
     grid.innerHTML = html;
-    window.selectedAvatarDraft = selectedAv;
+    window.selectedAvatarDraft = selectedAv || uniqueOptions[0];
   };
 
   window.selectAvatar = (url) => {
-    window.renderAvatarGrid(url, currentUser && !currentUser.isAnonymous ? currentUser.photoURL : null);
+    window.renderAvatarGrid(url);
   };
 
   window.saveProfile = async () => {
@@ -3036,32 +3317,35 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
     try {
       const docSnap = await getDoc(userRef);
       if (docSnap.exists()) fsData = docSnap.data();
-    } catch (error) {
-      console.error("Cloud fetch failed:", error);
-    }
+    } catch (error) {}
 
     let dName = fsData.displayName;
     let dAv = fsData.photoURL;
 
     if (!dName) dName = user.isAnonymous ? `Guest-${uid.substring(0, 4)}` : (user.displayName || `Player-${uid.substring(0,4)}`);
-    if (!dAv) dAv = user.isAnonymous ? `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${uid}` : (user.photoURL || `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${uid}`);
+    if (!dAv) dAv = user.photoURL || window.generateAvatarSVG(uid);
 
     window.playerProfile = { displayName: dName, photoURL: dAv };
 
     const btnTextElement = document.getElementById('authBtnText');
     const authAvatar = document.getElementById('authAvatar');
     const authIcon = document.getElementById('authIcon');
+    const authBtn = document.getElementById('authBtn');
     
     if (btnTextElement) btnTextElement.textContent = dName.split(' ')[0];
     if (authAvatar) {
       authAvatar.src = dAv;
-      authAvatar.style.display = 'block';
+      authAvatar.classList.remove('hidden');
     }
+    
     if (authIcon) authIcon.style.display = 'none';
+    if (authBtn && !authBtn.classList.contains('is-auth-pill')) {
+        authBtn.classList.add('is-auth-pill');
+    }
 
     const nameInput = document.getElementById('profileNameInput');
     if (nameInput) nameInput.value = dName;
-    if (window.renderAvatarGrid) window.renderAvatarGrid(dAv, !user.isAnonymous ? user.photoURL : null);
+    if (window.renderAvatarGrid) window.renderAvatarGrid(dAv);
 
     let fsStats = fsData.stats || { w: 0, l: 0, d: 0, score: 0 };
     const localStats = window.gameStats || { w: 0, l: 0, d: 0, score: 0 };
@@ -3100,9 +3384,7 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
         photoURL: dAv,
         stats: merged
       }, { merge: true });
-    } catch (error) {
-      console.error("Failed to save merged data to DB:", error);
-    }
+    } catch (error) {}
   }
 
   onAuthStateChanged(auth, async (user) => {
@@ -3143,13 +3425,11 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
     }
   };
 
-  // --- LEADERBOARD LOGIC (NOW USING ZEROSCORE) ---
   window.fetchLeaderboard = async () => {
     const list = document.getElementById('leaderboardList');
     list.innerHTML = '<div class="text-center py-8 text-[var(--chalk-dim)] mono text-sm">Fetching from secure DB...</div>';
     
     try {
-      // Query top 10 users ranked by the new XP Score logic
       const q = query(collection(db, "users"), orderBy("stats.score", "desc"), limit(10));
       const snapshot = await getDocs(q);
       
@@ -3163,7 +3443,6 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
       
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        // Fallback calculation for older accounts that haven't saved a new 'score' property yet
         let xpScore = 0;
         if (data.stats && data.stats.score !== undefined) {
            xpScore = data.stats.score;
@@ -3172,7 +3451,7 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
         }
         
         const name = data.displayName || `Guest-${docSnap.id.substring(0, 4)}`;
-        const avatar = data.photoURL || `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${docSnap.id}`;
+        let avatar = data.photoURL || window.generateAvatarSVG(docSnap.id);
         
         let rankColor = "var(--chalk-dim)";
         if (rank === 1) rankColor = "var(--chalk-yellow)";
@@ -3183,7 +3462,7 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
           <div class="flex items-center justify-between p-3 rounded-lg" style="background: rgba(0,0,0,0.15); border: 1px solid var(--tray-line);">
             <div class="flex items-center gap-3">
               <span class="font-bold mono text-lg text-right" style="color: ${rankColor}; width: 24px;">#${rank}</span>
-              <img src="${avatar}" class="w-8 h-8 rounded-full" crossorigin="anonymous" style="border: 1px solid var(--tray-line); background: var(--wood-dark);">
+              <img src="${avatar}" class="w-8 h-8 rounded-full" crossorigin="anonymous" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src=window.generateAvatarSVG('${docSnap.id}');" style="border: 1px solid var(--tray-line); background: var(--wood-dark); object-fit: cover;">
               <span class="font-bold text-sm truncate max-w-[140px]" style="color: var(--chalk);">${name}</span>
             </div>
             <div class="text-right flex-shrink-0">
@@ -3197,15 +3476,12 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
       list.innerHTML = html;
       
     } catch (error) {
-      console.error("Leaderboard Error:", error);
       list.innerHTML = '<div class="text-center py-8 text-[var(--ink-red)] mono text-sm">Failed to load rankings.</div>';
     }
   };
 
-  // AUTO-SAVE LOGIC FOR VICTORIES
   window.triggerAutoSaveVictory = async () => {
     if (!currentUser || currentUser.isAnonymous) return;
-    
     try {
       const data = window.getReplayData();
       data.playerName = window.playerProfile.displayName || "Player";
@@ -3216,43 +3492,29 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
       
       const shareText = document.getElementById('shareRecapText');
       if (shareText) {
-        shareText.innerHTML = `
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-          Copy Victory Link
-        `;
+        shareText.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg> Copy Victory Link`;
       }
-    } catch (e) {
-      console.error("Auto-save victory failed:", e);
-    }
+    } catch (e) {}
   };
 
-  // UNIFIED SHARE / COPY HANDLER
   window.handleShareClick = async () => {
     if (!currentUser || currentUser.isAnonymous) {
       document.getElementById('authModal').classList.add('open');
       return;
     }
-
     const btnText = document.getElementById('shareRecapText');
     const originalText = btnText.innerHTML;
 
-    // If already auto-saved, copy immediately
     if (currentReplayId) {
       const replayUrl = window.location.origin + window.location.pathname + "?replay=" + currentReplayId;
       const shareMsg = `Watch my ZeroCross match against the Engine!\n${replayUrl}`;
-      
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(shareMsg);
-      } else {
-        window.legacyCopyToClipboard(shareMsg);
-      }
-      
+      if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(shareMsg);
+      else window.legacyCopyToClipboard(shareMsg);
       btnText.innerHTML = "Link Copied!";
       setTimeout(() => { btnText.innerHTML = originalText; }, 2000);
       return;
     }
 
-    // Otherwise, perform manual upload
     btnText.innerHTML = "Uploading Replay...";
     try {
       const data = window.getReplayData();
@@ -3265,21 +3527,15 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
       const replayUrl = window.location.origin + window.location.pathname + "?replay=" + docRef.id;
       const shareMsg = `Watch my ZeroCross match against the Engine!\n${replayUrl}`;
 
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(shareMsg);
-      } else {
-        window.legacyCopyToClipboard(shareMsg);
-      }
+      if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(shareMsg);
+      else window.legacyCopyToClipboard(shareMsg);
       btnText.innerHTML = "Link Copied!";
     } catch (err) {
-      console.error("Replay save failed:", err);
       btnText.innerHTML = "Upload Failed";
     }
-
     setTimeout(() => { btnText.innerHTML = originalText; }, 2500);
   };
 
-  // CHECK URL FOR REPLAYS ON BOOT
   const urlParams = new URLSearchParams(window.location.search);
   const replayId = urlParams.get('replay');
 
@@ -3291,37 +3547,54 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
         if (docSnap.exists()) {
           const rData = docSnap.data();
           if (window.applyReplayData) window.applyReplayData(rData);
-          
           let wText = "Draw";
           if (rData.winner === 1) wText = `${rData.playerName} Won`;
           if (rData.winner === -1) wText = `Engine Won`;
-          
           if (window.updateStatus) window.updateStatus(`Replay: ${rData.playerName} vs Engine - ${wText}`, "good");
         } else {
           if (window.updateStatus) window.updateStatus("Replay not found or expired.", "bad");
         }
       } catch (error) {
-        console.error("Error fetching replay:", error);
         if (window.updateStatus) window.updateStatus("Failed to load replay.", "bad");
       }
     }
     loadCloudReplay();
   }
 
-  // --- ONLINE MULTIPLAYER UI LOGIC ---
+  // =====================================================================
+  // --- REAL-TIME MULTIPLAYER SYNC & CHAT CORE ---
+  // =====================================================================
+  
+  let activeRoomCode = null;
+  let roomListenerUnsubscribe = null;
+
+  const cleanupGhostRoom = () => {
+    if (activeRoomCode) {
+      if (window.onlineRole === 1) {
+        deleteDoc(doc(db, 'rooms', activeRoomCode)).catch(()=>{});
+      } else if (window.onlineRole === -1) {
+        updateDoc(doc(db, 'rooms', activeRoomCode), { state: 'abandoned' }).catch(()=>{});
+      }
+    }
+  };
+  window.addEventListener('beforeunload', cleanupGhostRoom);
+  window.addEventListener('pagehide', cleanupGhostRoom);
+
   window.openMultiplayerModal = () => {
-    // Require Google Login for online multiplayer
+    if (window.gameActive) return;
     if (!currentUser || currentUser.isAnonymous) {
       document.getElementById('authModal').classList.add('open');
       return;
     }
-    resetMultiplayerModal();
+    window.resetMultiplayerModal();
     document.getElementById('multiplayerModal').classList.add('open');
   };
 
   window.closeMultiplayerModal = () => {
     document.getElementById('multiplayerModal').classList.remove('open');
-    window.cancelMatchmaking();
+    if (!activeRoomCode) {
+        window.cancelMatchmaking();
+    }
   };
 
   window.resetMultiplayerModal = () => {
@@ -3330,18 +3603,117 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
     document.getElementById('mpJoinState').classList.add('hidden');
     document.getElementById('mpCloseBtn').style.display = 'block';
     document.getElementById('joinCodeInput').value = '';
+    document.getElementById('joinCodeInput').style.borderColor = "var(--tray-line)";
+    document.getElementById('joinRoomBtn').textContent = "Connect";
+    document.getElementById('joinRoomBtn').disabled = false;
   };
 
-  window.showHostState = () => {
+  window.sendChatMessage = async () => {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text || !activeRoomCode) return;
+    input.value = '';
+    window.toggleEmojiPicker(false);
+    
+    const msg = {
+      id: Date.now() + Math.random().toString(36).substr(2, 5),
+      sender: window.playerProfile.displayName.split(' ')[0],
+      text: text,
+      role: window.onlineRole
+    };
+
+    try {
+      await updateDoc(doc(db, 'rooms', activeRoomCode), { lastMessage: msg });
+    } catch(e) {
+      console.error("Chat Error:", e);
+    }
+  };
+
+  // UNIFIED ROOM LISTENER (Handles Chat, Disconnects, & Moves cleanly)
+  window.handleRoomUpdate = (data, roomId) => {
+      if (data.state === 'abandoned') {
+          window.updateStatus("Opponent left the match.", "bad");
+          window.gameActive = false;
+          window.cancelMatchmaking();
+          return;
+      }
+
+      // Guest Joins Room (Host Only)
+      if (data.state === 'playing' && window.onlineRole === null && data.guest) {
+          console.log("Guest joined! Starting game.");
+          window.startOnlineGame(1, data.currentTurn, roomId, data.guestName); 
+      }
+
+      // Process Live Chat Message
+      if (data.lastMessage && data.lastMessage.id !== window.lastProcessedMsgId) {
+          window.lastProcessedMsgId = data.lastMessage.id;
+          const chatBox = document.getElementById('chatMessages');
+          
+          const isMe = data.lastMessage.role === window.onlineRole;
+          const color = isMe ? 'var(--chalk-dim)' : (data.lastMessage.role === 1 ? 'var(--chalk-pink)' : 'var(--chalk-blue)');
+          const senderName = isMe ? 'You' : data.lastMessage.sender;
+          
+          const safeText = document.createElement('div');
+          safeText.innerText = data.lastMessage.text;
+          
+          const align = isMe ? 'flex-end' : 'flex-start';
+          const bg = isMe ? 'rgba(232, 209, 122, 0.15)' : 'rgba(0, 0, 0, 0.2)';
+          const br = isMe ? '10px 10px 0 10px' : '10px 10px 10px 0';
+          
+          chatBox.innerHTML += `
+            <div style="display:flex; flex-direction:column; align-items: ${align}; margin-bottom: 8px;">
+              <span style="font-size: 0.55rem; color: ${color}; margin-bottom: 2px;">${senderName}</span>
+              <div style="background: ${bg}; padding: 6px 10px; border-radius: ${br}; color: var(--chalk); display: inline-block;">
+                  ${safeText.innerHTML}
+              </div>
+            </div>
+          `;
+          chatBox.scrollTop = chatBox.scrollHeight;
+      }
+
+      // Process Opponent Move
+      if (window.gameActive && data.state === 'playing') {
+          if (data.lastMoveIdx !== -1 && data.currentTurn === window.onlineRole) {
+              if (data.lastMoveIdx !== window.lastMoveIdx) {
+                  window.makeMove(data.lastMoveIdx, -window.onlineRole, null);
+                  if (window.checkGameOver()) return;
+                  window.updateStatus('Your move!', 'active');
+                  window.updateBoardUI();
+              }
+          }
+      }
+  };
+
+  window.showHostState = async () => {
     document.getElementById('mpChooseState').classList.add('hidden');
     document.getElementById('mpHostState').classList.remove('hidden');
     document.getElementById('mpCloseBtn').style.display = 'none';
     
-    // Generate a visually distinct random 5-character string
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     document.getElementById('hostRoomCode').textContent = code;
-    
-    // [FIREBASE DATABASE LOGIC WILL GO HERE IN PART 2]
+    activeRoomCode = code;
+
+    try {
+      const randomStart = Math.random() < 0.5 ? 1 : -1;
+      await setDoc(doc(db, 'rooms', code), {
+        host: currentUser.uid,
+        hostName: window.playerProfile.displayName,
+        state: 'waiting',
+        currentTurn: randomStart, 
+        lastMoveIdx: -1,
+        timestamp: new Date().toISOString()
+      });
+
+      roomListenerUnsubscribe = onSnapshot(doc(db, 'rooms', code), (snapshot) => {
+        if (!snapshot.exists()) return;
+        window.handleRoomUpdate(snapshot.data(), code);
+      });
+      
+    } catch (e) {
+      console.error("Hosting error:", e);
+      document.getElementById('mpHostWaitText').textContent = "Error creating room.";
+      document.getElementById('mpHostWaitText').style.color = "var(--ink-red)";
+    }
   };
 
   window.showJoinState = () => {
@@ -3351,12 +3723,7 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
     setTimeout(() => document.getElementById('joinCodeInput').focus(), 100);
   };
 
-  window.cancelMatchmaking = () => {
-    // [FIREBASE CLEANUP LOGIC WILL GO HERE IN PART 2]
-    window.resetMultiplayerModal();
-  };
-
-  window.joinRoom = () => {
+  window.joinRoom = async () => {
     const code = document.getElementById('joinCodeInput').value.trim().toUpperCase();
     if (code.length !== 5) {
       document.getElementById('joinCodeInput').style.borderColor = "var(--ink-red)";
@@ -3367,9 +3734,84 @@ if ('serviceWorker' in navigator && !window.location.search.includes('auth=1')) 
     document.getElementById('joinRoomBtn').textContent = "Connecting...";
     document.getElementById('joinRoomBtn').disabled = true;
 
-    // [FIREBASE JOIN LOGIC WILL GO HERE IN PART 2]
+    try {
+      const roomRef = doc(db, 'rooms', code);
+      const snap = await getDoc(roomRef);
+
+      if (!snap.exists() || snap.data().state !== 'waiting') {
+         document.getElementById('joinCodeInput').style.borderColor = "var(--ink-red)";
+         document.getElementById('joinRoomBtn').textContent = "Room Not Found";
+         setTimeout(() => { 
+             document.getElementById('joinCodeInput').style.borderColor = "var(--tray-line)";
+             document.getElementById('joinRoomBtn').textContent = "Connect";
+             document.getElementById('joinRoomBtn').disabled = false;
+         }, 2000);
+         return;
+      }
+
+      await updateDoc(roomRef, {
+        state: 'playing',
+        guest: currentUser.uid,
+        guestName: window.playerProfile.displayName
+      });
+
+      activeRoomCode = code;
+      const data = (await getDoc(roomRef)).data(); 
+
+      roomListenerUnsubscribe = onSnapshot(roomRef, (snapshot) => {
+        if (!snapshot.exists()) {
+            if (window.gameActive && window.isOnlinePvP) {
+                window.updateStatus("Opponent left the match.", "bad");
+                window.gameActive = false;
+                window.cancelMatchmaking();
+            }
+            return;
+        }
+        window.handleRoomUpdate(snapshot.data(), code);
+      });
+
+      window.startOnlineGame(-1, data.currentTurn, code, data.hostName); 
+
+    } catch (e) {
+      console.error("Join error:", e);
+      document.getElementById('joinRoomBtn').textContent = "Connection Error";
+    }
   };
 
+  window.cancelMatchmaking = async () => {
+    if (roomListenerUnsubscribe) {
+        roomListenerUnsubscribe();
+        roomListenerUnsubscribe = null;
+    }
+    if (activeRoomCode) {
+       try { await deleteDoc(doc(db, 'rooms', activeRoomCode)); } catch(e) {}
+       activeRoomCode = null;
+    }
+    window.resetMultiplayerModal();
+  };
+
+  window.syncMoveToCloud = async (idx, oldTurn) => {
+      if (!activeRoomCode) return;
+      try {
+          await updateDoc(doc(db, 'rooms', activeRoomCode), {
+              lastMoveIdx: idx,
+              currentTurn: -oldTurn
+          });
+      } catch (e) {
+          console.error("Move sync failed:", e);
+      }
+  };
+
+  // --- SERVICE WORKER KILL SWITCH ---
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      for (let reg of regs) {
+        if (reg.active && reg.active.scriptURL.includes('sw.js')) {
+          reg.unregister();
+        }
+      }
+    });
+  }
 </script>
 
 </body>
