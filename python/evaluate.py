@@ -194,11 +194,18 @@ class Evaluator:
 
         if not champion_nets or champion_nets[0] is None:
             print("\nNo champion provided. Candidate becomes first champion by default.")
-            return True, cand_vs_rand_wr, 1.0, 0.0
+            return True, cand_vs_rand_wr, 1.0, 0.0, 1.0
             
         promoted = True
         primary_champ_wr = 0.0
         primary_champ_elo = 0.0
+        # Worst win rate across EVERY opponent faced this call (latest champion,
+        # rotating historical pick, and the sentinel if the caller passed one).
+        # Callers that need to gate on "did the candidate hold up against
+        # everything, not just the most recent champion" (e.g. pipeline.py's
+        # forced-promotion check) should use this instead of primary_champ_wr,
+        # which only ever reflects champion_nets[0].
+        min_champ_wr = 1.0
         
         for idx, champ in enumerate(champion_nets):
             if champ is None:
@@ -215,11 +222,13 @@ class Evaluator:
             if idx == 0:
                 primary_champ_wr = wr
                 primary_champ_elo = elo
-                
+
+            min_champ_wr = min(min_champ_wr, wr)
+
             if lcb <= 0.50:
                 promoted = False
                 
-        return promoted, cand_vs_rand_wr, primary_champ_wr, primary_champ_elo
+        return promoted, cand_vs_rand_wr, primary_champ_wr, primary_champ_elo, min_champ_wr
 
 if __name__ == "__main__":
     device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
@@ -230,7 +239,7 @@ if __name__ == "__main__":
     
     evaluator = Evaluator(device=device)
     
-    promoted, rand_wr, champ_wr, elo_diff = evaluator.run_full_evaluation(
+    promoted, rand_wr, champ_wr, elo_diff, min_champ_wr = evaluator.run_full_evaluation(
         candidate_net=cand, 
         champion_nets=[champ], 
         sims=10, 

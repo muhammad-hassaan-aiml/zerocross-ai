@@ -128,7 +128,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                   batch_size=512, num_res_blocks=None, num_channels=None, max_consecutive_rejections=5,
                   min_force_promote_winrate=0.52, stall_eval_multiplier=3, buffer_archive_interval=5,
                   champion_archive_keep=25, buffer_archive_keep=3, random_baseline_interval=10,
-                  random_baseline_games=20, random_baseline_sims=50):
+                  random_baseline_games=20, random_baseline_sims=50, sentinel_checkpoint=None):
 
     if games_per_iteration is None:
         games_per_iteration = concurrent_games
@@ -205,6 +205,37 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             print("Starting a fresh champion network (no valid checkpoint found).")
 
     best_net.to(device)
+
+    # FIXED SENTINEL OPPONENT (loaded once, unaffected by champion_gen_ pruning).
+    #
+    # The rotating "historical opponent" picked below (see history_files) is
+    # always drawn from whatever champion_gen_*.pth files currently exist,
+    # capped at the most recent --champion-archive-keep promotions. That
+    # pool can drift downward as a whole over many iterations without ever
+    # showing up as a rejection, because every comparison is always against
+    # a similarly-drifted recent peer -- there's no permanent, independently
+    # verified reference point in the loop. sentinel_net is that reference
+    # point: loaded once here, never pruned, never replaced automatically.
+    # It should only ever be swapped out deliberately, after a properly
+    # powered check (e.g. a round-robin) confirms a new checkpoint is
+    # genuinely and robustly stronger -- not by any automated process.
+    sentinel_net = None
+    if sentinel_checkpoint:
+        if os.path.exists(sentinel_checkpoint):
+            checkpoint = safe_torch_load(sentinel_checkpoint, map_location=device)
+            if checkpoint is not None:
+                sentinel_net = ZeroCrossNet(**net_kwargs).to(device)
+                state_dict = checkpoint['model_state_dict'] if (isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint) else checkpoint
+                state_dict = strip_module_prefix(state_dict)
+                sentinel_net.load_state_dict(state_dict)
+                sentinel_net.eval()
+                print(f"Loaded fixed sentinel from {sentinel_checkpoint} -- included in every evaluation, "
+                      f"immune to champion_gen_ pruning and the rotating-pool blind spot.")
+            else:
+                print(f"WARNING: --sentinel-checkpoint {sentinel_checkpoint} failed to load; continuing without one.")
+        else:
+            print(f"WARNING: --sentinel-checkpoint {sentinel_checkpoint} not found; continuing without one.")
+
     replay_buffer = deque(maxlen=max_buffer_size)
 
     if os.path.exists(buffer_path):
@@ -255,7 +286,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         print(f"Current Learning Rate: {current_lr}")
 
         metrics = {'pi_loss': 0.0, 'v_loss': 0.0, 'entropy': 0.0}
-        rand_wr, champ_wr, elo_diff = 0.0, 0.0, 0.0
+        rand_wr, champ_wr, elo_diff, min_champ_wr = 0.0, 0.0, 0.0, 0.0
         promoted = False
         forced_promotion = False
         candidate_net = best_net
@@ -392,10 +423,13 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                     hist_net.eval()
                     champion_nets.append(hist_net)
 
+            if sentinel_net is not None:
+                champion_nets.append(sentinel_net)
+
             # evaluate.py's play_match_batched() already calls .eval() on
             # both nets internally, so gating always compares two networks
             # in eval() mode -- this is the behavior self-play now matches.
-            promoted, rand_wr, champ_wr, elo_diff = evaluator.run_full_evaluation(
+            promoted, rand_wr, champ_wr, elo_diff, min_champ_wr = evaluator.run_full_evaluation(
                 candidate_net=raw_candidate,
                 champion_nets=champion_nets,
                 sims=eval_sims,
@@ -440,29 +474,38 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             #  1. The evaluation itself gets wider as rejections mount (see
             #     effective_eval_games above), so "stuck at the limit" is a
             #     much more reliable signal by the time we get here.
-            #  2. Forcing only fires if champ_wr clears a safety floor
-            #     (--min-force-promote-winrate, default 0.45). That still
-            #     lets through a candidate that's genuinely close/marginal
-            #     (the "probably noise, not regression" case the original
-            #     logic was meant for), but refuses to force through a
-            #     candidate that's clearly losing outright.
+            #  2. Forcing only fires if min_champ_wr -- the WORST win rate
+            #     across every opponent faced this iteration (latest
+            #     champion, rotating historical pick, AND the fixed
+            #     sentinel if one is configured) -- clears a safety floor
+            #     (--min-force-promote-winrate, default 0.52). Using only
+            #     the latest-champion win rate here would let a candidate
+            #     get force-promoted while confidently losing to the
+            #     sentinel, as long as it beat whatever the (possibly
+            #     already-drifted) latest champion happened to be -- which
+            #     is exactly the gap that let past drift go undetected.
+            #     min_champ_wr closes that: every opponent has to be
+            #     satisfied, not just the most recent one.
             if not promoted:
                 consecutive_rejections += 1
                 if consecutive_rejections >= max_consecutive_rejections:
-                    if champ_wr >= min_force_promote_winrate:
-                        print(f"STALL BREAK: {consecutive_rejections} consecutive rejections, but win rate vs "
-                              f"champion is {champ_wr:.2%} (>= {min_force_promote_winrate:.0%} floor) -- treating "
-                              f"this as noise-limited gating rather than a real regression. Forcing promotion.")
+                    if min_champ_wr >= min_force_promote_winrate:
+                        print(f"STALL BREAK: {consecutive_rejections} consecutive rejections, but the worst win "
+                              f"rate across every opponent faced (including the sentinel) is {min_champ_wr:.2%} "
+                              f"(>= {min_force_promote_winrate:.0%} floor) -- treating this as noise-limited "
+                              f"gating rather than a real regression. Forcing promotion.")
                         promoted = True
                         forced_promotion = True
                     else:
-                        print(f"HELD BACK: {consecutive_rejections} consecutive rejections and win rate vs "
-                              f"champion is only {champ_wr:.2%} (< {min_force_promote_winrate:.0%} floor) -- this "
-                              f"looks like a genuine regression, not noise, so NOT forcing promotion. If this "
-                              f"keeps happening, check the LR schedule / loss curves rather than raising "
-                              f"--max-rejections.")
+                        print(f"HELD BACK: {consecutive_rejections} consecutive rejections. Worst win rate "
+                              f"across all opponents faced is only {min_champ_wr:.2%} (vs latest champion: "
+                              f"{champ_wr:.2%}) (< {min_force_promote_winrate:.0%} floor) -- this looks like a "
+                              f"genuine regression against at least one opponent, not noise, so NOT forcing "
+                              f"promotion. If this keeps happening, check the LR schedule / loss curves rather "
+                              f"than raising --max-rejections.")
                 else:
-                    print(f"REJECTED Candidate failed to clear the confidence bounds. ({consecutive_rejections}/{max_consecutive_rejections} rejections, win rate vs champion {champ_wr:.2%})")
+                    print(f"REJECTED Candidate failed to clear the confidence bounds. ({consecutive_rejections}/{max_consecutive_rejections} "
+                          f"rejections, win rate vs latest champion {champ_wr:.2%}, worst vs any opponent {min_champ_wr:.2%})")
 
             if promoted:
                 tag = "FORCED " if forced_promotion else ""
@@ -562,6 +605,7 @@ if __name__ == "__main__":
     parser.add_argument("--buffer-archive-interval", type=int, default=5, help="Write a full numbered replay-buffer archive every N iterations, instead of every iteration, to cut redundant disk I/O")
     parser.add_argument("--buffer-archive-keep", type=int, default=3, help="How many numbered replay-buffer archives to retain on disk (oldest deleted first)")
     parser.add_argument("--champion-archive-keep", type=int, default=25, help="How many historical champion_gen_*.pth checkpoints to retain on disk (oldest deleted first)")
+    parser.add_argument("--sentinel-checkpoint", type=str, default=None, help="Path to a fixed checkpoint always included as an extra evaluation opponent, in addition to the current champion and the rotating champion_gen_ pool. Unlike that pool (capped to the most recent --champion-archive-keep promotions), this one never changes and is never pruned -- it's what catches collective drift across many iterations that only-recent-history comparisons can't. Update it manually only after a properly powered check (e.g. a round-robin) confirms a new checkpoint is robustly stronger.")
 
     parser.add_argument("--random-baseline-interval", type=int, default=10, help="Only re-measure win rate vs a random-move baseline every N iterations (it never affects promotion, it's a sanity/trend metric, so it doesn't need full precision every iteration). Set to 1 to check every iteration like before")
     parser.add_argument("--random-baseline-games", type=int, default=20, help="Games used for the vs-random sanity check when it does run -- can be much smaller than --eval-games since beating random is a low bar")
@@ -606,4 +650,5 @@ if __name__ == "__main__":
         random_baseline_interval=args.random_baseline_interval,
         random_baseline_games=args.random_baseline_games,
         random_baseline_sims=args.random_baseline_sims,
+        sentinel_checkpoint=args.sentinel_checkpoint,
     )
