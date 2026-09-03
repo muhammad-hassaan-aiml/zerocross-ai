@@ -87,6 +87,40 @@ def strip_module_prefix(state_dict):
     return {k.replace('module.', '', 1): v for k, v in state_dict.items()}
 
 
+def ensure_csv_header(csv_path, expected_header):
+    """
+    Make sure csv_path's header matches expected_header before anything
+    appends to it this run. An older training_log.csv (e.g. one carried
+    forward from before min_champ_lcb / milestone tracking existed) has
+    fewer columns -- appending new-schema rows straight onto that file
+    would silently misalign every column from that point on rather than
+    raising an error, which is worse than either starting clean or erroring
+    loudly. Instead: if the file doesn't exist, create it with the new
+    header (unchanged behavior). If it exists with a DIFFERENT header, the
+    old file is preserved untouched under a .pre_migration-<timestamp>
+    suffix and a fresh file with the new header is started -- so nothing is
+    lost, but every row from here on is unambiguously the new schema.
+    """
+    if not os.path.exists(csv_path):
+        with open(csv_path, mode='w', newline='') as f:
+            csv.writer(f).writerow(expected_header)
+        return
+
+    with open(csv_path, newline='') as f:
+        existing_header = next(csv.reader(f), [])
+
+    if existing_header == expected_header:
+        return
+
+    backup_path = f"{csv_path}.pre_migration-{int(time.time())}"
+    os.rename(csv_path, backup_path)
+    print(f"NOTE: {csv_path} was on an older schema (header didn't match). "
+          f"Preserved the old file as {backup_path} and started a fresh log "
+          f"with the current header.")
+    with open(csv_path, mode='w', newline='') as f:
+        csv.writer(f).writerow(expected_header)
+
+
 def prune_numbered_files(drive_dir, prefix, suffix, keep_last_n):
     """
     Keep only the keep_last_n highest-numbered '<prefix><N><suffix>' files
@@ -126,9 +160,10 @@ def prune_numbered_files(drive_dir, prefix, suffix, keep_last_n):
 def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_train=True, do_evaluate=True,
                   concurrent_games=10, games_per_iteration=None, mcts_sims=50, eval_games=2, eval_sims=20,
                   batch_size=512, num_res_blocks=None, num_channels=None, max_consecutive_rejections=5,
-                  min_force_promote_winrate=0.52, stall_eval_multiplier=3, buffer_archive_interval=5,
+                  min_force_promote_lcb=0.50, stall_eval_multiplier=3, buffer_archive_interval=5,
                   champion_archive_keep=25, buffer_archive_keep=3, random_baseline_interval=10,
-                  random_baseline_games=20, random_baseline_sims=50, sentinel_checkpoint=None):
+                  random_baseline_games=20, random_baseline_sims=50, sentinel_checkpoint=None,
+                  milestone_interval=25, milestone_games=100, milestone_sims=200, milestone_max_refs=5):
 
     if games_per_iteration is None:
         games_per_iteration = concurrent_games
@@ -166,15 +201,17 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
     model_path = os.path.join(drive_dir, "best_model.pth")
     last_candidate_path = os.path.join(drive_dir, "last_candidate.pth")
     csv_path = os.path.join(drive_dir, "training_log.csv")
+    milestone_csv_path = os.path.join(drive_dir, "milestone_log.csv")
     buffer_path = os.path.join(drive_dir, "replay_buffer.pt")
     state_path = os.path.join(drive_dir, "pipeline_state.json")
 
-    if not os.path.exists(csv_path):
-        with open(csv_path, mode='w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(["Iteration", "LR", "PI_Loss", "V_Loss", "Entropy",
-                              "WinRate_vs_Random", "WinRate_vs_Champ", "Elo_Diff_vs_Champ",
-                              "Promoted", "ForcedPromotion", "ConsecutiveRejections"])
+    CSV_HEADER = ["Iteration", "LR", "PI_Loss", "V_Loss", "Entropy",
+                  "WinRate_vs_Random", "WinRate_vs_Champ", "Elo_Diff_vs_Champ",
+                  "MinChampLCB", "Promoted", "ForcedPromotion", "ConsecutiveRejections"]
+    ensure_csv_header(csv_path, CSV_HEADER)
+
+    MILESTONE_CSV_HEADER = ["Iteration", "RefName", "WinRate", "LCB", "EloDiff", "Wins", "Losses", "Draws"]
+    ensure_csv_header(milestone_csv_path, MILESTONE_CSV_HEADER)
 
     consecutive_rejections = 0
     start_iteration = 0
@@ -286,7 +323,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         print(f"Current Learning Rate: {current_lr}")
 
         metrics = {'pi_loss': 0.0, 'v_loss': 0.0, 'entropy': 0.0}
-        rand_wr, champ_wr, elo_diff, min_champ_wr = 0.0, 0.0, 0.0, 0.0
+        rand_wr, champ_wr, elo_diff, min_champ_wr, min_champ_lcb = 0.0, 0.0, 0.0, 0.0, 0.0
         promoted = False
         forced_promotion = False
         candidate_net = best_net
@@ -429,7 +466,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             # evaluate.py's play_match_batched() already calls .eval() on
             # both nets internally, so gating always compares two networks
             # in eval() mode -- this is the behavior self-play now matches.
-            promoted, rand_wr, champ_wr, elo_diff, min_champ_wr = evaluator.run_full_evaluation(
+            promoted, rand_wr, champ_wr, elo_diff, min_champ_wr, min_champ_lcb = evaluator.run_full_evaluation(
                 candidate_net=raw_candidate,
                 champion_nets=champion_nets,
                 sims=eval_sims,
@@ -474,38 +511,44 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             #  1. The evaluation itself gets wider as rejections mount (see
             #     effective_eval_games above), so "stuck at the limit" is a
             #     much more reliable signal by the time we get here.
-            #  2. Forcing only fires if min_champ_wr -- the WORST win rate
-            #     across every opponent faced this iteration (latest
-            #     champion, rotating historical pick, AND the fixed
-            #     sentinel if one is configured) -- clears a safety floor
-            #     (--min-force-promote-winrate, default 0.52). Using only
-            #     the latest-champion win rate here would let a candidate
-            #     get force-promoted while confidently losing to the
-            #     sentinel, as long as it beat whatever the (possibly
-            #     already-drifted) latest champion happened to be -- which
-            #     is exactly the gap that let past drift go undetected.
-            #     min_champ_wr closes that: every opponent has to be
-            #     satisfied, not just the most recent one.
+            #  2. Forcing only fires if min_champ_lcb -- the WORST
+            #     lower-confidence-bound across every opponent faced this
+            #     iteration (latest champion, rotating historical pick, AND
+            #     the fixed sentinel if one is configured) -- clears
+            #     --min-force-promote-lcb (default 0.50, the SAME bar the
+            #     normal per-opponent gate uses just above). Gating on raw
+            #     win rate here used to let a candidate through on a number
+            #     like "52% over a handful of games" that carried almost no
+            #     statistical weight -- a coin flip dressed up as a signal.
+            #     Using min_champ_lcb against the identical 0.50 bar means
+            #     the escape hatch can never approve something the normal
+            #     gate would still be unsure about; the only difference is
+            #     effective_eval_games has grown (via stall_eval_multiplier)
+            #     enough to make that same bar decisive instead of noisy.
+            #     Every opponent has to clear it, not just the most recent
+            #     champion -- that's what catches a candidate that beats a
+            #     possibly-already-drifted latest champion while still
+            #     confidently losing to the sentinel.
             if not promoted:
                 consecutive_rejections += 1
                 if consecutive_rejections >= max_consecutive_rejections:
-                    if min_champ_wr >= min_force_promote_winrate:
-                        print(f"STALL BREAK: {consecutive_rejections} consecutive rejections, but the worst win "
-                              f"rate across every opponent faced (including the sentinel) is {min_champ_wr:.2%} "
-                              f"(>= {min_force_promote_winrate:.0%} floor) -- treating this as noise-limited "
-                              f"gating rather than a real regression. Forcing promotion.")
+                    if min_champ_lcb >= min_force_promote_lcb:
+                        print(f"STALL BREAK: {consecutive_rejections} consecutive rejections, but the worst LCB "
+                              f"across every opponent faced (including the sentinel) is {min_champ_lcb:.2%} "
+                              f"(>= {min_force_promote_lcb:.0%} floor, {effective_eval_games} games/match) -- "
+                              f"at this sample size that's a genuine statistical edge, not noise. Forcing promotion.")
                         promoted = True
                         forced_promotion = True
                     else:
-                        print(f"HELD BACK: {consecutive_rejections} consecutive rejections. Worst win rate "
-                              f"across all opponents faced is only {min_champ_wr:.2%} (vs latest champion: "
-                              f"{champ_wr:.2%}) (< {min_force_promote_winrate:.0%} floor) -- this looks like a "
-                              f"genuine regression against at least one opponent, not noise, so NOT forcing "
-                              f"promotion. If this keeps happening, check the LR schedule / loss curves rather "
-                              f"than raising --max-rejections.")
+                        print(f"HELD BACK: {consecutive_rejections} consecutive rejections. Worst LCB across all "
+                              f"opponents faced is only {min_champ_lcb:.2%} (raw win rate {min_champ_wr:.2%}, vs "
+                              f"latest champion: {champ_wr:.2%}) (< {min_force_promote_lcb:.0%} floor) -- even at "
+                              f"{effective_eval_games} games/match this isn't distinguishable from a real "
+                              f"regression, so NOT forcing promotion. If this keeps happening, check the LR "
+                              f"schedule / self-play volume rather than lowering --min-force-promote-lcb.")
                 else:
                     print(f"REJECTED Candidate failed to clear the confidence bounds. ({consecutive_rejections}/{max_consecutive_rejections} "
-                          f"rejections, win rate vs latest champion {champ_wr:.2%}, worst vs any opponent {min_champ_wr:.2%})")
+                          f"rejections, win rate vs latest champion {champ_wr:.2%}, worst LCB vs any opponent {min_champ_lcb:.2%})")
 
             if promoted:
                 tag = "FORCED " if forced_promotion else ""
@@ -555,11 +598,67 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 round(rand_wr, 4),
                 round(champ_wr, 4),
                 round(elo_diff, 1),
+                round(min_champ_lcb, 4) if do_evaluate else "",
                 promoted,
                 forced_promotion,
                 consecutive_rejections
             ])
         print(f"Metrics successfully appended to {csv_path}")
+
+        # PERIODIC MILESTONE GAUNTLET.
+        #
+        # The rotating champion_gen_ pool used for ordinary gating (above) is
+        # capped to the most recent --champion-archive-keep promotions, so it
+        # can only ever measure the champion against relatively recent peers.
+        # If quality drifts down gradually, every one of those peers has
+        # drifted by a similar amount, and the rotating comparison alone
+        # never flags it. This block runs a separate, higher-precision check
+        # every --milestone-interval iterations: the CURRENT CHAMPION (not
+        # the just-trained candidate) against the pinned sentinel plus a
+        # bounded set of historical milestone checkpoints, logged to its own
+        # milestone_log.csv. --milestone-max-refs caps how many milestones
+        # are checked each time so cost stays bounded over a long run instead
+        # of growing without limit as milestones accumulate.
+        if do_evaluate and current_iter % milestone_interval == 0:
+            print(f"\nMILESTONE GAUNTLET (iteration {current_iter}, every {milestone_interval})")
+            refs = {}
+            if sentinel_net is not None:
+                refs["sentinel"] = sentinel_net
+
+            milestone_files = sorted(
+                (f for f in os.listdir(drive_dir) if f.startswith("milestone_iter_") and f.endswith(".pth")),
+                key=lambda f: int(f[len("milestone_iter_"):-len(".pth")]) if f[len("milestone_iter_"):-len(".pth")].isdigit() else -1
+            )
+            # Most recent milestones are the most informative about *recent*
+            # drift; oldest ones (already covered by the sentinel, usually)
+            # are dropped first once milestone_max_refs is exceeded.
+            for f in milestone_files[-milestone_max_refs:]:
+                path = os.path.join(drive_dir, f)
+                checkpoint = safe_torch_load(path, map_location=device)
+                if checkpoint is None:
+                    continue
+                ref_net = ZeroCrossNet(**net_kwargs).to(device)
+                state_dict = checkpoint['model_state_dict'] if (isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint) else checkpoint
+                ref_net.load_state_dict(strip_module_prefix(state_dict))
+                ref_net.eval()
+                refs[f.replace(".pth", "")] = ref_net
+
+            if not refs:
+                print("  (no sentinel or milestone checkpoints available yet -- skipping)")
+            else:
+                evaluator = Evaluator(device=device)
+                with open(milestone_csv_path, mode='a', newline='') as f:
+                    writer = csv.writer(f)
+                    for ref_name, ref_net in refs.items():
+                        wr, elo, w, l, d = evaluator.play_match_batched(best_net, ref_net, milestone_games, milestone_sims)
+                        lcb = evaluator.get_lower_confidence_bound(wr, milestone_games)
+                        print(f"  Champion vs {ref_name} | WR: {wr:.2%} (LCB: {lcb:.2%}) | Elo Diff: {elo:+.0f} | W:{w} L:{l} D:{d}")
+                        writer.writerow([current_iter, ref_name, round(wr, 4), round(lcb, 4), round(elo, 1), w, l, d])
+                        if lcb <= 0.50:
+                            print(f"  WARNING: current champion's LCB against {ref_name} is at or below 50% -- "
+                                  f"possible drift. Worth a manual look (see arena.py) before trusting further "
+                                  f"promotions built on top of this champion.")
+                print(f"Milestone results appended to {milestone_csv_path}")
 
         total_iter_duration = time.time() - iter_start_time
 
@@ -598,8 +697,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--num-res-blocks", type=int, default=None, help="Override ZeroCrossNet residual block count (default: network.py's default)")
     parser.add_argument("--num-channels", type=int, default=None, help="Override ZeroCrossNet channel width (default: network.py's default)")
-    parser.add_argument("--max-rejections", type=int, default=5, help="After this many consecutive gating rejections in a row, consider a stall-guarded forced promotion (see --min-force-promote-winrate) instead of stalling forever on eval noise")
-    parser.add_argument("--min-force-promote-winrate", type=float, default=0.52, help="Safety floor for forced promotion: only force through a candidate stuck at --max-rejections if its win rate vs the champion is at least this high. Below this, it's treated as a genuine regression and NOT promoted, no matter how many rejections have piled up")
+    parser.add_argument("--max-rejections", type=int, default=5, help="After this many consecutive gating rejections in a row, consider a stall-guarded forced promotion (see --min-force-promote-lcb) instead of stalling forever on eval noise")
+    parser.add_argument("--min-force-promote-lcb", type=float, default=0.50, help="Safety floor for forced promotion, expressed as a lower-confidence-bound (LCB) -- the SAME statistical bar the normal per-opponent gate uses. Only force through a candidate stuck at --max-rejections if the worst LCB across every opponent it faced (at the widened --stall-eval-multiplier sample size) is at least this high. Below this, it's treated as a genuine regression and NOT promoted, no matter how many rejections have piled up. Do not set this below 0.50 -- that reintroduces the exact loophole this replaces raw win-rate gating for")
     parser.add_argument("--stall-eval-multiplier", type=int, default=3, help="Once consecutive rejections reach half of --max-rejections, multiply --eval-games by this factor for subsequent evaluations, to shrink confidence-interval noise before a forced-promotion decision is made")
     parser.add_argument("--max-buffer-size", type=int, default=1000000, help="Max samples kept in the replay buffer (deque maxlen); oldest samples are dropped first")
     parser.add_argument("--buffer-archive-interval", type=int, default=5, help="Write a full numbered replay-buffer archive every N iterations, instead of every iteration, to cut redundant disk I/O")
@@ -610,6 +709,11 @@ if __name__ == "__main__":
     parser.add_argument("--random-baseline-interval", type=int, default=10, help="Only re-measure win rate vs a random-move baseline every N iterations (it never affects promotion, it's a sanity/trend metric, so it doesn't need full precision every iteration). Set to 1 to check every iteration like before")
     parser.add_argument("--random-baseline-games", type=int, default=20, help="Games used for the vs-random sanity check when it does run -- can be much smaller than --eval-games since beating random is a low bar")
     parser.add_argument("--random-baseline-sims", type=int, default=50, help="MCTS sims used for the vs-random sanity check when it does run -- can be much smaller than --eval-sims for the same reason")
+
+    parser.add_argument("--milestone-interval", type=int, default=25, help="Every N iterations, run a separate high-precision gauntlet: current CHAMPION (not the candidate) vs the pinned sentinel and a bounded set of recent milestone checkpoints, logged to milestone_log.csv. This is an independent drift check -- it never affects promotion, only visibility")
+    parser.add_argument("--milestone-games", type=int, default=100, help="Games per matchup in the milestone gauntlet -- can and should be higher-precision than routine --eval-games since it only runs every --milestone-interval iterations")
+    parser.add_argument("--milestone-sims", type=int, default=200, help="MCTS sims per move in the milestone gauntlet")
+    parser.add_argument("--milestone-max-refs", type=int, default=5, help="Cap on how many past milestone_iter_*.pth checkpoints are checked each gauntlet run (most recent ones kept), so cost stays bounded as milestones accumulate over a long run. The sentinel, if configured, is always included on top of this cap")
 
     args = parser.parse_args()
 
@@ -642,7 +746,7 @@ if __name__ == "__main__":
         num_res_blocks=args.num_res_blocks,
         num_channels=args.num_channels,
         max_consecutive_rejections=args.max_rejections,
-        min_force_promote_winrate=args.min_force_promote_winrate,
+        min_force_promote_lcb=args.min_force_promote_lcb,
         stall_eval_multiplier=args.stall_eval_multiplier,
         buffer_archive_interval=args.buffer_archive_interval,
         buffer_archive_keep=args.buffer_archive_keep,
@@ -651,4 +755,8 @@ if __name__ == "__main__":
         random_baseline_games=args.random_baseline_games,
         random_baseline_sims=args.random_baseline_sims,
         sentinel_checkpoint=args.sentinel_checkpoint,
+        milestone_interval=args.milestone_interval,
+        milestone_games=args.milestone_games,
+        milestone_sims=args.milestone_sims,
+        milestone_max_refs=args.milestone_max_refs,
     )

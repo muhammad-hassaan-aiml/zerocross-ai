@@ -102,5 +102,60 @@ def plot_training_metrics(csv_path=None, save_dir=None):
     if current_streak is not None:
         print(f"  Current reject streak: {current_streak}")
 
+def plot_milestone_metrics(csv_path=None, save_dir=None):
+    """
+    Plot the periodic milestone-gauntlet results (current champion vs the
+    pinned sentinel + recent milestone checkpoints) written by pipeline.py's
+    --milestone-interval gauntlet. This is the drift check: unlike the main
+    training plot's Elo-vs-champion line (which only ever compares against
+    recent, possibly-already-drifted peers), this compares against FIXED
+    reference points over time, so a genuine slow decline shows up as a
+    downward trend here even when the routine gate keeps promoting.
+    """
+    base_dir = "/kaggle/working/models" if os.path.exists("/kaggle/working") else "models"
+
+    if csv_path is None:
+        csv_path = os.path.join(base_dir, "milestone_log.csv")
+    if save_dir is None:
+        save_dir = os.path.join(base_dir, "plots")
+
+    if not os.path.exists(csv_path):
+        print(f"Milestone log not found at {csv_path}. It's only written once "
+              f"--milestone-interval iterations have passed -- run the pipeline "
+              f"longer, or check the path.")
+        return
+
+    df = pd.read_csv(csv_path)
+    if df.empty:
+        print("Milestone CSV is empty.")
+        return
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    plt.figure(figsize=(10, 5))
+    for ref_name, group in df.groupby("RefName"):
+        plt.plot(group["Iteration"], group["LCB"], marker='o', label=f"vs {ref_name}")
+    plt.axhline(y=0.50, color='red', linestyle='--', alpha=0.6, label="0.50 floor")
+    plt.title("Champion LCB vs Fixed Reference Checkpoints Over Time")
+    plt.xlabel("Iteration")
+    plt.ylabel("Lower Confidence Bound (win rate)")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(save_dir, "milestone_lcb.png"))
+    plt.close()
+
+    print(f"Milestone plot saved to {save_dir}/milestone_lcb.png")
+
+    below_floor = df[df["LCB"] <= 0.50]
+    if not below_floor.empty:
+        print(f"\nWARNING: {len(below_floor)} milestone check(s) had LCB <= 50% -- "
+              f"possible drift. Worth investigating with arena.py:")
+        print(below_floor[["Iteration", "RefName", "WinRate", "LCB"]].to_string(index=False))
+    else:
+        print("\nNo drift warnings: champion has cleared 50% LCB against every "
+              "fixed reference checked so far.")
+
+
 if __name__ == "__main__":
     plot_training_metrics()
+    plot_milestone_metrics()

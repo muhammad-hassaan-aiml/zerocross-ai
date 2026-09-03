@@ -194,41 +194,113 @@ class Evaluator:
 
         if not champion_nets or champion_nets[0] is None:
             print("\nNo champion provided. Candidate becomes first champion by default.")
-            return True, cand_vs_rand_wr, 1.0, 0.0, 1.0
-            
+            return True, cand_vs_rand_wr, 1.0, 0.0, 1.0, 1.0
+
         promoted = True
         primary_champ_wr = 0.0
         primary_champ_elo = 0.0
-        # Worst win rate across EVERY opponent faced this call (latest champion,
-        # rotating historical pick, and the sentinel if the caller passed one).
-        # Callers that need to gate on "did the candidate hold up against
-        # everything, not just the most recent champion" (e.g. pipeline.py's
-        # forced-promotion check) should use this instead of primary_champ_wr,
-        # which only ever reflects champion_nets[0].
+        # Worst RAW win rate across EVERY opponent faced this call. Kept for
+        # logging/trend purposes only -- raw win rate says nothing about how
+        # many games it's based on, so it's not safe to gate any decision on
+        # this alone (a 55% raw win rate over 10 games and over 500 games are
+        # very different levels of evidence). See min_champ_lcb below for the
+        # value that should actually be used for gating decisions.
         min_champ_wr = 1.0
-        
+        # Worst LOWER-CONFIDENCE-BOUND across every opponent faced this call.
+        # This is the statistically honest version of min_champ_wr: it already
+        # accounts for sample size, so "0.51 LCB over 300 games" and "0.51 LCB
+        # over 20 games" both mean the same thing (true win rate is very
+        # likely >= 51%), unlike raw win rate where those two cases carry
+        # wildly different amounts of evidence. Callers gating a decision
+        # (e.g. pipeline.py's forced-promotion check) should use this, not
+        # min_champ_wr, and should compare it against the SAME threshold
+        # (0.50) used by the normal per-opponent gate just below -- so an
+        # "escape hatch" for stalled candidates never gets to apply a looser
+        # statistical bar than ordinary promotion does.
+        min_champ_lcb = 1.0
+
         for idx, champ in enumerate(champion_nets):
             if champ is None:
                 continue
-                
+
             champ_type = "Latest Champion" if idx == 0 else f"Historical Champion {idx}"
             print(f"\nMatchup {idx + 2}: Candidate vs {champ_type}")
-            
+
             wr, elo, w, l, d = self.play_match_batched(candidate_net, champ, games_per_match, sims)
             lcb = self.get_lower_confidence_bound(wr, games_per_match)
-            
+
             print(f"Candidate vs {champ_type} | WR: {wr:.2%} (LCB: {lcb:.2%}) | Elo Diff: {elo:+.0f} | W: {w} L: {l} D: {d}")
-            
+
             if idx == 0:
                 primary_champ_wr = wr
                 primary_champ_elo = elo
 
             min_champ_wr = min(min_champ_wr, wr)
+            min_champ_lcb = min(min_champ_lcb, lcb)
 
             if lcb <= 0.50:
                 promoted = False
-                
-        return promoted, cand_vs_rand_wr, primary_champ_wr, primary_champ_elo, min_champ_wr
+
+        return promoted, cand_vs_rand_wr, primary_champ_wr, primary_champ_elo, min_champ_wr, min_champ_lcb
+
+    def round_robin(self, nets, sims=50, games_per_match=20):
+        """
+        Play every named net in `nets` (dict: name -> nn.Module) against every
+        other one, games_per_match games per pairing (split evenly as each
+        side playing first), and return a results table.
+
+        This is the tool for "which of these checkpoints is actually best"
+        questions that a single candidate-vs-champion gate can't answer --
+        e.g. comparing the current champion against several old milestones
+        and the pinned sentinel all at once (see arena.py). It does not feed
+        into any promotion decision by itself; it's for manual/periodic
+        inspection.
+
+        Returns a list of dicts, one per unordered pair:
+          {
+            "a": name_a, "b": name_b,
+            "wr_a": <A's win rate over both halves>,
+            "lcb_a": <lower-confidence-bound on wr_a>,
+            "elo_diff": <A's Elo diff vs B>,
+            "wins_a", "wins_b", "draws"
+          }
+        Printed as a running log as it goes, since a full round robin over
+        many checkpoints can take a while.
+        """
+        names = list(nets.keys())
+        results = []
+
+        half = max(1, games_per_match // 2)
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                name_a, name_b = names[i], names[j]
+                net_a, net_b = nets[name_a], nets[name_b]
+
+                print(f"\n{name_a} vs {name_b} ({games_per_match} games, {sims} sims)...")
+
+                wr1, _, w1, l1, d1 = self.play_match_batched(net_a, net_b, half, sims)
+                # Play the second half with sides swapped so neither checkpoint
+                # gets a first-move-advantage artifact baked into the result.
+                wr2, _, l2, w2, d2 = self.play_match_batched(net_b, net_a, half, sims)
+
+                total_games = half * 2
+                wins_a = w1 + w2
+                wins_b = l1 + l2
+                draws = d1 + d2
+                wr_a = (wins_a + 0.5 * draws) / total_games
+                lcb_a = self.get_lower_confidence_bound(wr_a, total_games)
+                elo_diff = self.calculate_elo_diff(wr_a)
+
+                print(f"  {name_a} vs {name_b} | WR({name_a}): {wr_a:.2%} (LCB: {lcb_a:.2%}) | "
+                      f"Elo Diff: {elo_diff:+.0f} | W:{wins_a} L:{wins_b} D:{draws}")
+
+                results.append({
+                    "a": name_a, "b": name_b,
+                    "wr_a": wr_a, "lcb_a": lcb_a, "elo_diff": elo_diff,
+                    "wins_a": wins_a, "wins_b": wins_b, "draws": draws,
+                })
+
+        return results
 
 if __name__ == "__main__":
     device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
@@ -239,11 +311,11 @@ if __name__ == "__main__":
     
     evaluator = Evaluator(device=device)
     
-    promoted, rand_wr, champ_wr, elo_diff, min_champ_wr = evaluator.run_full_evaluation(
+    promoted, rand_wr, champ_wr, elo_diff, min_champ_wr, min_champ_lcb = evaluator.run_full_evaluation(
         candidate_net=cand, 
         champion_nets=[champ], 
         sims=10, 
         games_per_match=2
     )
     
-    print(f"\nEvaluator Test Complete. Promoted: {promoted}")
+    print(f"\nEvaluator Test Complete. Promoted: {promoted} (min_champ_lcb={min_champ_lcb:.2%})")
