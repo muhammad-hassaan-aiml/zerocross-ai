@@ -163,7 +163,8 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                   min_force_promote_lcb=0.50, stall_eval_multiplier=3, buffer_archive_interval=5,
                   champion_archive_keep=25, buffer_archive_keep=3, random_baseline_interval=10,
                   random_baseline_games=20, random_baseline_sims=50, sentinel_checkpoint=None,
-                  milestone_interval=25, milestone_games=100, milestone_sims=200, milestone_max_refs=5):
+                  milestone_interval=25, milestone_games=100, milestone_sims=200, milestone_max_refs=5,
+                  temp_moves=35):
 
     if games_per_iteration is None:
         games_per_iteration = concurrent_games
@@ -221,6 +222,14 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             consecutive_rejections = state_data.get("consecutive_rejections", 0)
             start_iteration = state_data.get("total_iterations", 0)
 
+    # Tracks the iteration number embedded in whatever best_net CURRENTLY is --
+    # i.e. the last iteration that actually got promoted (or the resume point,
+    # if nothing has been promoted yet this run). Used below to detect when
+    # the champion and the pinned sentinel are literally the same weights, so
+    # the milestone gauntlet doesn't run a network against a mirror of itself
+    # and misread the resulting ~50% coin-flip as "drift".
+    champion_iteration = start_iteration
+
     best_net = ZeroCrossNet(**net_kwargs)
     optimizer_state = None
 
@@ -257,6 +266,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
     # powered check (e.g. a round-robin) confirms a new checkpoint is
     # genuinely and robustly stronger -- not by any automated process.
     sentinel_net = None
+    sentinel_iteration = None
     if sentinel_checkpoint:
         if os.path.exists(sentinel_checkpoint):
             checkpoint = safe_torch_load(sentinel_checkpoint, map_location=device)
@@ -266,8 +276,9 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 state_dict = strip_module_prefix(state_dict)
                 sentinel_net.load_state_dict(state_dict)
                 sentinel_net.eval()
-                print(f"Loaded fixed sentinel from {sentinel_checkpoint} -- included in every evaluation, "
-                      f"immune to champion_gen_ pruning and the rotating-pool blind spot.")
+                sentinel_iteration = checkpoint.get('iteration') if isinstance(checkpoint, dict) else None
+                print(f"Loaded fixed sentinel from {sentinel_checkpoint} (iteration {sentinel_iteration}) -- "
+                      f"included in every evaluation, immune to champion_gen_ pruning and the rotating-pool blind spot.")
             else:
                 print(f"WARNING: --sentinel-checkpoint {sentinel_checkpoint} failed to load; continuing without one.")
         else:
@@ -353,7 +364,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             # can't silently drift back to train() from anywhere else.
             best_net.eval()
 
-            worker = SelfPlayWorker(best_net, num_concurrent_games=concurrent_games, mcts_simulations=mcts_sims, temperature_moves=45)
+            worker = SelfPlayWorker(best_net, num_concurrent_games=concurrent_games, mcts_simulations=mcts_sims, temperature_moves=temp_moves)
             new_samples = worker.generate_data(total_games_to_play=games_per_iteration)
             gen_duration = time.time() - gen_start
             aug_duration = worker.total_augmentation_time
@@ -403,14 +414,17 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                     print(f"Utilizing {num_gpus} GPUs {gpu_ids} with DataParallel for Training")
                     candidate_net = torch.nn.DataParallel(candidate_net, device_ids=gpu_ids)
 
+                sample_size = min(len(replay_buffer), 600000)
+                train_sample = random.sample(list(replay_buffer), sample_size)
+                
                 candidate_net, opt_state, metrics = train_network(
-                    candidate_net,
-                    list(replay_buffer),
-                    batch_size=batch_size,
-                    epochs=2,
-                    lr=current_lr,
-                    device=device,
-                    optimizer_state=optimizer_state
+                candidate_net,
+                train_sample,
+                batch_size=batch_size,
+                epochs=2,
+                lr=current_lr,
+                device=device,
+                optimizer_state=optimizer_state
                 )
                 train_duration = time.time() - train_start
 
@@ -556,6 +570,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 best_net.load_state_dict(raw_candidate.state_dict())
                 optimizer_state = opt_state
                 consecutive_rejections = 0
+                champion_iteration = current_iter
 
                 checkpoint_data = {
                     'iteration': current_iter,
@@ -622,8 +637,21 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         if do_evaluate and current_iter % milestone_interval == 0:
             print(f"\nMILESTONE GAUNTLET (iteration {current_iter}, every {milestone_interval})")
             refs = {}
+            skip_sentinel_reason = None
             if sentinel_net is not None:
-                refs["sentinel"] = sentinel_net
+                if sentinel_iteration is not None and sentinel_iteration == champion_iteration:
+                    # The champion hasn't been promoted since the sentinel was pinned, so
+                    # best_net and sentinel_net are literally the same weights right now.
+                    # Playing a network against a mirror of itself just measures move-order/
+                    # temperature noise and reads as a coin-flip ~50% -- that's NOT drift,
+                    # it's a mathematical certainty for identical weights, so skip the match
+                    # entirely rather than logging a misleading "possible drift" warning.
+                    skip_sentinel_reason = (f"sentinel is iteration {sentinel_iteration}, same as the current "
+                                             f"champion -- they're identical weights right now, so this comparison "
+                                             f"would just measure noise. Skipping until the champion is actually "
+                                             f"promoted past the sentinel.")
+                else:
+                    refs["sentinel"] = sentinel_net
 
             milestone_files = sorted(
                 (f for f in os.listdir(drive_dir) if f.startswith("milestone_iter_") and f.endswith(".pth")),
@@ -633,6 +661,11 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             # drift; oldest ones (already covered by the sentinel, usually)
             # are dropped first once milestone_max_refs is exceeded.
             for f in milestone_files[-milestone_max_refs:]:
+                milestone_iter_num = int(f[len("milestone_iter_"):-len(".pth")]) if f[len("milestone_iter_"):-len(".pth")].isdigit() else None
+                if milestone_iter_num is not None and milestone_iter_num == champion_iteration:
+                    # Same reasoning as the sentinel check above -- a milestone saved at
+                    # exactly the champion's current iteration is the champion.
+                    continue
                 path = os.path.join(drive_dir, f)
                 checkpoint = safe_torch_load(path, map_location=device)
                 if checkpoint is None:
@@ -643,8 +676,11 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 ref_net.eval()
                 refs[f.replace(".pth", "")] = ref_net
 
+            if skip_sentinel_reason:
+                print(f"  (skipping sentinel comparison: {skip_sentinel_reason})")
+
             if not refs:
-                print("  (no sentinel or milestone checkpoints available yet -- skipping)")
+                print("  (no other sentinel/milestone checkpoints available yet -- skipping)")
             else:
                 evaluator = Evaluator(device=device)
                 with open(milestone_csv_path, mode='a', newline='') as f:
@@ -690,6 +726,7 @@ if __name__ == "__main__":
     parser.add_argument("--concurrent-games", type=int, default=10, help="Parallel games in-flight during self-play (bounded by GPU memory)")
     parser.add_argument("--games-per-iteration", type=int, default=None, help="Total self-play games generated per iteration before training (default: same as --concurrent-games)")
     parser.add_argument("--mcts-sims", type=int, default=50, help="MCTS simulations per move during self-play")
+    parser.add_argument("--temp-moves", type=int, default=20, help="Number of plies at the START of each self-play game sampled stochastically (proportional to MCTS visit counts) before switching to greedy (temperature=0) play. Higher values inject more exploration/diversity into training data but also more near-random outcomes that dilute the training signal; lower values produce cleaner but less diverse games. Was hardcoded to 45 previously -- if candidates are stuck reading as statistical noise around 50% vs the champion for many iterations, try lowering this before raising sims/games further")
     parser.add_argument("--eval-games", type=int, default=2, help="Games per matchup in evaluation (e.g. 40 on Kaggle)")
     parser.add_argument("--eval-sims", type=int, default=20, help="MCTS simulations per move during evaluation")
 
@@ -740,6 +777,7 @@ if __name__ == "__main__":
         concurrent_games=args.concurrent_games,
         games_per_iteration=args.games_per_iteration,
         mcts_sims=args.mcts_sims,
+        temp_moves=args.temp_moves,
         eval_games=args.eval_games,
         eval_sims=args.eval_sims,
         batch_size=args.batch_size,
