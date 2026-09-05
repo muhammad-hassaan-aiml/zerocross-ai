@@ -17,7 +17,7 @@ from collections import deque
 from network import ZeroCrossNet
 from self_play import SelfPlayWorker
 from train import train_network
-from evaluate import Evaluator
+from evaluate import Evaluator, run_matches_across_gpus
 
 
 def _selfplay_worker_process(gpu_id, state_dict_cpu, net_kwargs, num_games, concurrent_games,
@@ -564,6 +564,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             )
 
             champion_nets = [best_net]
+            champion_names = [f"Latest Champion (iter {champion_iteration})"]
             history_files = [f for f in os.listdir(drive_dir) if f.startswith("champion_gen_") and f.endswith(".pth")]
             if history_files:
                 selected_history = random.choice(history_files)
@@ -577,22 +578,36 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                     hist_net.load_state_dict(state_dict)
                     hist_net.eval()
                     champion_nets.append(hist_net)
+                    champion_names.append(f"Historical Champion ({selected_history.replace('.pth', '')})")
 
             if sentinel_net is not None:
                 champion_nets.append(sentinel_net)
+                champion_names.append(f"Sentinel (iter {sentinel_iteration})" if sentinel_iteration is not None else "Sentinel")
 
             # evaluate.py's play_match_batched() already calls .eval() on
             # both nets internally, so gating always compares two networks
             # in eval() mode -- this is the behavior self-play now matches.
+            #
+            # gpu_ids/net_kwargs let run_full_evaluation spread every matchup
+            # (random baseline, latest champion, historical, sentinel) across
+            # all usable GPUs instead of running them back to back on just
+            # gpu_ids[0] -- previously the entire evaluation phase used one
+            # GPU while any others sat idle, same class of fix as the
+            # multi-GPU self-play split above. Single/no-GPU runs are
+            # unaffected: run_full_evaluation falls back to the original
+            # sequential behavior whenever fewer than 2 GPUs are passed.
             promoted, rand_wr, champ_wr, elo_diff, min_champ_wr, min_champ_lcb = evaluator.run_full_evaluation(
                 candidate_net=raw_candidate,
                 champion_nets=champion_nets,
+                champion_names=champion_names,
                 sims=eval_sims,
                 games_per_match=effective_eval_games,
                 check_random_baseline=run_random_check,
                 random_baseline_games=random_baseline_games,
                 random_baseline_sims=random_baseline_sims,
-                last_random_baseline_wr=last_rand_wr
+                last_random_baseline_wr=last_rand_wr,
+                gpu_ids=gpu_ids,
+                net_kwargs=net_kwargs,
             )
             last_rand_wr = rand_wr
             eval_duration = time.time() - eval_start
@@ -786,16 +801,33 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             if not refs:
                 print("  (no other sentinel/milestone checkpoints available yet -- skipping)")
             else:
-                evaluator = Evaluator(device=device)
+                # Same fix as the routine evaluation above: each reference
+                # match is independent, so with gpu_ids spread across more
+                # than one GPU they run concurrently instead of one at a
+                # time on gpu_ids[0]. Falls back to the original sequential
+                # behavior on single/no-GPU runs.
+                # `name` (the refs dict key) is what gets written to
+                # milestone_log.csv's RefName column, so it's kept exactly
+                # as before ("sentinel", "milestone_iter_N") -- plot_metrics.py
+                # groups by that exact string, and changing it mid-run would
+                # split an existing trend line into two legend entries. The
+                # bracketed iteration is added only to the display label used
+                # for the console print / results lookup below.
+                ref_names = list(refs.keys())
+                display_names = {
+                    name: (f"{name} (iter {sentinel_iteration})" if name == "sentinel" and sentinel_iteration is not None else name)
+                    for name in ref_names
+                }
+                matches = [(f"Champion vs {display_names[name]}", refs[name], milestone_games, milestone_sims) for name in ref_names]
+                results = run_matches_across_gpus(best_net, matches, gpu_ids, net_kwargs)
+
                 with open(milestone_csv_path, mode='a', newline='') as f:
                     writer = csv.writer(f)
-                    for ref_name, ref_net in refs.items():
-                        wr, elo, w, l, d = evaluator.play_match_batched(best_net, ref_net, milestone_games, milestone_sims)
-                        lcb = evaluator.get_lower_confidence_bound(wr, milestone_games)
-                        print(f"  Champion vs {ref_name} | WR: {wr:.2%} (LCB: {lcb:.2%}) | Elo Diff: {elo:+.0f} | W:{w} L:{l} D:{d}")
-                        writer.writerow([current_iter, ref_name, round(wr, 4), round(lcb, 4), round(elo, 1), w, l, d])
-                        if lcb <= 0.50:
-                            print(f"  WARNING: current champion's LCB against {ref_name} is at or below 50% -- "
+                    for name, (label, _, _, _) in zip(ref_names, matches):
+                        r = results[label]
+                        writer.writerow([current_iter, name, round(r['wr'], 4), round(r['lcb'], 4), round(r['elo'], 1), r['w'], r['l'], r['d']])
+                        if r['lcb'] <= 0.50:
+                            print(f"  WARNING: current champion's LCB against {name} is at or below 50% -- "
                                   f"possible drift. Worth a manual look (see arena.py) before trusting further "
                                   f"promotions built on top of this champion.")
                 print(f"Milestone results appended to {milestone_csv_path}")

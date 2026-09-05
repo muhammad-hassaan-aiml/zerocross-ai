@@ -1,4 +1,5 @@
 import torch
+import torch.multiprocessing as torch_mp
 import math
 import random
 import numpy as np
@@ -9,6 +10,101 @@ sys.path.extend(['.', 'build', '../build', os.path.join(os.getcwd(), 'build')])
 
 import zerocross_engine
 from network import ZeroCrossNet
+
+def _match_worker(gpu_id, net_a_state, net_b_state, net_kwargs, games, sims, label, out_queue):
+    """
+    Plays one matchup on its own CUDA device in its own subprocess. Mirrors
+    self_play.py's _selfplay_worker_process pattern: nets are rebuilt from
+    CPU state dicts inside the subprocess (a CUDA tensor can't cross a
+    process boundary), and only the small scalar result is sent back
+    through the queue.
+    """
+    try:
+        device = torch.device(f"cuda:{gpu_id}")
+        net_a = None
+        if net_a_state is not None:
+            net_a = ZeroCrossNet(**net_kwargs).to(device)
+            net_a.load_state_dict(net_a_state)
+            net_a.eval()
+        net_b = None
+        if net_b_state is not None:
+            net_b = ZeroCrossNet(**net_kwargs).to(device)
+            net_b.load_state_dict(net_b_state)
+            net_b.eval()
+
+        evaluator = Evaluator(device=device)
+        wr, elo, w, l, d = evaluator.play_match_batched(net_a, net_b, games, sims)
+        lcb = evaluator.get_lower_confidence_bound(wr, games)
+        out_queue.put({'ok': True, 'label': label, 'wr': wr, 'lcb': lcb, 'elo': elo, 'w': w, 'l': l, 'd': d})
+    except Exception as e:
+        out_queue.put({'ok': False, 'label': label, 'error': repr(e)})
+
+
+def run_matches_across_gpus(net_a, matches, gpu_ids, net_kwargs):
+    """
+    Plays every (label, net_b, games, sims) matchup in `matches`, splitting
+    them round-robin across gpu_ids so more than one GPU stays busy during
+    evaluation/milestone gauntlets. Previously every matchup ran back to
+    back on a single device (gpu_ids[0]) while any other GPU sat idle for
+    the entire evaluation phase -- the same problem multi-GPU self-play in
+    pipeline.py already solves for data generation, just not for matches.
+
+    net_a is the fixed side of every matchup (the candidate during routine
+    evaluation, the current champion during the milestone gauntlet).
+    net_b may be None for a matchup against the random-move baseline.
+
+    Falls back to running matches one at a time on a single device
+    (gpu_ids[0], or CPU if gpu_ids is empty) when fewer than 2 GPUs are
+    usable -- multiprocessing has no benefit there and would only add
+    overhead.
+
+    Returns a dict: label -> {'wr', 'lcb', 'elo', 'w', 'l', 'd'}.
+    """
+    if len(gpu_ids) < 2:
+        device = torch.device(f"cuda:{gpu_ids[0]}") if gpu_ids else torch.device("cpu")
+        evaluator = Evaluator(device=device)
+        results = {}
+        for label, net_b, games, sims in matches:
+            wr, elo, w, l, d = evaluator.play_match_batched(net_a, net_b, games, sims)
+            lcb = evaluator.get_lower_confidence_bound(wr, games)
+            lcb_str = f" (LCB: {lcb:.2%})" if net_b is not None else ""
+            print(f"{label} | WR: {wr:.2%}{lcb_str} | Elo Diff: {elo:+.0f} | W: {w} L: {l} D: {d}")
+            results[label] = {'wr': wr, 'lcb': lcb, 'elo': elo, 'w': w, 'l': l, 'd': d}
+        return results
+
+    print(f"Running {len(matches)} matchup(s) across {len(gpu_ids)} GPUs {gpu_ids}...")
+
+    ctx = torch_mp.get_context('spawn')
+    net_a_state_cpu = {k: v.cpu() for k, v in net_a.state_dict().items()} if net_a is not None else None
+
+    procs, queues, labels, assigned_gpu, has_net_b = [], [], [], [], []
+    for idx, (label, net_b, games, sims) in enumerate(matches):
+        gpu_id = gpu_ids[idx % len(gpu_ids)]
+        net_b_state_cpu = {k: v.cpu() for k, v in net_b.state_dict().items()} if net_b is not None else None
+        q = ctx.Queue()
+        p = ctx.Process(
+            target=_match_worker,
+            args=(gpu_id, net_a_state_cpu, net_b_state_cpu, net_kwargs, games, sims, label, q)
+        )
+        p.start()
+        procs.append(p)
+        queues.append(q)
+        labels.append(label)
+        assigned_gpu.append(gpu_id)
+        has_net_b.append(net_b is not None)
+
+    results = {}
+    for p, q, label, gpu_id, net_b_present in zip(procs, queues, labels, assigned_gpu, has_net_b):
+        status = q.get()   # blocks until that matchup's worker signals done
+        p.join()
+        if not status.get('ok'):
+            raise RuntimeError(f"Evaluation matchup '{label}' on GPU {gpu_id} failed: {status.get('error')}")
+        lcb_str = f" (LCB: {status['lcb']:.2%})" if net_b_present else ""
+        print(f"{label} [GPU {gpu_id}] | WR: {status['wr']:.2%}{lcb_str} | "
+              f"Elo Diff: {status['elo']:+.0f} | W: {status['w']} L: {status['l']} D: {status['d']}")
+        results[label] = {k: status[k] for k in ('wr', 'lcb', 'elo', 'w', 'l', 'd')}
+    return results
+
 
 class Evaluator:
     def __init__(self, device='cpu'):
@@ -157,7 +253,8 @@ class Evaluator:
 
     def run_full_evaluation(self, candidate_net, champion_nets, sims=50, games_per_match=20,
                              check_random_baseline=True, random_baseline_games=None,
-                             random_baseline_sims=None, last_random_baseline_wr=0.0):
+                             random_baseline_sims=None, last_random_baseline_wr=0.0,
+                             champion_names=None, gpu_ids=None, net_kwargs=None):
         """
         check_random_baseline, random_baseline_games, random_baseline_sims:
         the "Candidate vs Random Baseline" matchup below is a sanity metric
@@ -177,22 +274,75 @@ class Evaluator:
         behavior) when left as None, so existing callers are unaffected.
         The calling pipeline decides the actual policy (e.g. "only check
         every 10 iterations") -- this method just exposes the knobs.
+
+        champion_names: optional list, same length/order as champion_nets,
+        giving a human-readable identifier for each opponent (e.g. "Latest
+        Champion (iter 227)", "Historical Champion (champion_gen_173)",
+        "Sentinel (iter 226)"), printed in brackets after "Candidate vs" so
+        it's obvious at a glance which specific checkpoint the candidate
+        played -- not just "Historical Champion 1". Any index this doesn't
+        cover (or if the whole argument is omitted) falls back to the old
+        generic "Latest Champion" / "Historical Champion N" label.
+
+        gpu_ids, net_kwargs: when gpu_ids has more than one entry, every
+        matchup this call plays (random-baseline check included) is spread
+        across those GPUs via run_matches_across_gpus instead of running
+        back to back on self.device -- so a second (third, ...) GPU isn't
+        left idle for the whole evaluation phase the way it previously was.
+        net_kwargs (the ZeroCrossNet constructor kwargs, e.g. num_res_blocks/
+        num_channels) is required in that case so each matchup's subprocess
+        can rebuild the nets from CPU state dicts. Omit both, or pass a
+        single-GPU list, to keep the original sequential behavior on
+        self.device.
         """
         print(f"\nStarting Comprehensive Evaluation ({games_per_match} games per matchup)")
 
+        def label_for(idx):
+            if champion_names and idx < len(champion_names) and champion_names[idx]:
+                return f"Candidate vs {champion_names[idx]}"
+            return f"Candidate vs {'Latest Champion' if idx == 0 else f'Historical Champion {idx}'}"
+
+        has_champions = bool(champion_nets) and champion_nets[0] is not None
+
+        # Every matchup this call needs to play, built up front so parallel
+        # mode can dispatch all of them (random baseline included) across
+        # every usable GPU at once instead of one matchup at a time.
+        matches = []
         if check_random_baseline:
             rb_games = random_baseline_games if random_baseline_games is not None else games_per_match
             rb_sims = random_baseline_sims if random_baseline_sims is not None else sims
-            print(f"\nMatchup 1: Candidate vs Random Baseline ({rb_games} games, {rb_sims} sims)")
-            cand_vs_rand_wr, cand_vs_rand_elo, w, l, d = self.play_match_batched(candidate_net, None, rb_games, rb_sims)
-            print(f"Candidate vs Random | WR: {cand_vs_rand_wr:.2%} | Elo Diff: {cand_vs_rand_elo:+.0f} | W: {w} L: {l} D: {d}")
+            matches.append(("Candidate vs Random Baseline", None, rb_games, rb_sims))
+
+        champ_indices = []
+        if has_champions:
+            for idx, champ in enumerate(champion_nets):
+                if champ is None:
+                    continue
+                matches.append((label_for(idx), champ, games_per_match, sims))
+                champ_indices.append(idx)
+
+        parallel = gpu_ids is not None and len(gpu_ids) > 1 and net_kwargs is not None
+        if parallel:
+            results = run_matches_across_gpus(candidate_net, matches, gpu_ids, net_kwargs)
+        else:
+            results = {}
+            for match_idx, (label, net_b, games, s) in enumerate(matches, start=1):
+                print(f"\nMatchup {match_idx}: {label} ({games} games, {s} sims)")
+                wr, elo, w, l, d = self.play_match_batched(candidate_net, net_b, games, s)
+                lcb = self.get_lower_confidence_bound(wr, games)
+                lcb_str = f" (LCB: {lcb:.2%})" if net_b is not None else ""
+                print(f"{label} | WR: {wr:.2%}{lcb_str} | Elo Diff: {elo:+.0f} | W: {w} L: {l} D: {d}")
+                results[label] = {'wr': wr, 'lcb': lcb, 'elo': elo, 'w': w, 'l': l, 'd': d}
+
+        if check_random_baseline:
+            cand_vs_rand_wr = results["Candidate vs Random Baseline"]['wr']
         else:
             cand_vs_rand_wr = last_random_baseline_wr
-            print(f"\nMatchup 1: Candidate vs Random Baseline -- SKIPPED this iteration (reusing last "
-                  f"measured win rate {cand_vs_rand_wr:.2%}). This match never affects promotion, so it "
-                  f"doesn't need to run at full cost every single iteration.")
+            print(f"\nCandidate vs Random Baseline -- SKIPPED this iteration (reusing last measured win "
+                  f"rate {cand_vs_rand_wr:.2%}). This match never affects promotion, so it doesn't need to "
+                  f"run at full cost every single iteration.")
 
-        if not champion_nets or champion_nets[0] is None:
+        if not has_champions:
             print("\nNo champion provided. Candidate becomes first champion by default.")
             return True, cand_vs_rand_wr, 1.0, 0.0, 1.0, 1.0
 
@@ -219,26 +369,17 @@ class Evaluator:
         # statistical bar than ordinary promotion does.
         min_champ_lcb = 1.0
 
-        for idx, champ in enumerate(champion_nets):
-            if champ is None:
-                continue
-
-            champ_type = "Latest Champion" if idx == 0 else f"Historical Champion {idx}"
-            print(f"\nMatchup {idx + 2}: Candidate vs {champ_type}")
-
-            wr, elo, w, l, d = self.play_match_batched(candidate_net, champ, games_per_match, sims)
-            lcb = self.get_lower_confidence_bound(wr, games_per_match)
-
-            print(f"Candidate vs {champ_type} | WR: {wr:.2%} (LCB: {lcb:.2%}) | Elo Diff: {elo:+.0f} | W: {w} L: {l} D: {d}")
+        for idx in champ_indices:
+            r = results[label_for(idx)]
 
             if idx == 0:
-                primary_champ_wr = wr
-                primary_champ_elo = elo
+                primary_champ_wr = r['wr']
+                primary_champ_elo = r['elo']
 
-            min_champ_wr = min(min_champ_wr, wr)
-            min_champ_lcb = min(min_champ_lcb, lcb)
+            min_champ_wr = min(min_champ_wr, r['wr'])
+            min_champ_lcb = min(min_champ_lcb, r['lcb'])
 
-            if lcb <= 0.50:
+            if r['lcb'] <= 0.50:
                 promoted = False
 
         return promoted, cand_vs_rand_wr, primary_champ_wr, primary_champ_elo, min_champ_wr, min_champ_lcb
