@@ -194,6 +194,50 @@ def prune_numbered_files(drive_dir, prefix, suffix, keep_last_n):
             print(f"Could not delete {f}: {e}")
 
 
+def compute_learning_rate(iteration, lr_reheat_interval=40, lr_reheat_duration=5, lr_reheat_multiplier=3.0):
+    """
+    Base schedule is the original one-way step-decay (unchanged): LR only
+    ever goes DOWN as iteration count rises. That works fine while training
+    is reliably improving, but it also means once training plateaus there's
+    no mechanism to ever perturb the optimizer out of a local minimum --
+    it just sits at whatever the current step's LR is, indefinitely, for
+    however many more iterations you throw at it.
+
+    lr_reheat_* layers a lightweight SGDR-style periodic warm restart on top
+    of that base schedule: every `lr_reheat_interval` iterations (once past
+    the initial iteration-100 ramp-up phase), LR is temporarily multiplied
+    by `lr_reheat_multiplier` for the next `lr_reheat_duration` iterations,
+    then drops straight back to the normal base-schedule value. This is a
+    PURE function of (iteration, these three knobs) -- no extra state to
+    track or persist across restarts -- so it's safe to preview from a
+    resume/state-check cell and safe across however many separate Kaggle
+    sessions this ends up spanning.
+
+    Set lr_reheat_interval=0 (or None) to disable entirely and fall back to
+    the plain step-decay schedule.
+
+    Returns (lr, is_reheat_iteration).
+    """
+    if iteration <= 100:
+        base_lr = 0.001
+    elif iteration <= 250:
+        base_lr = 0.0005
+    elif iteration <= 700:
+        base_lr = 0.0001
+    else:
+        base_lr = 0.00003
+
+    is_reheat = False
+    if lr_reheat_interval and lr_reheat_interval > 0 and iteration > 100:
+        cycle_position = (iteration - 101) % lr_reheat_interval
+        if cycle_position < lr_reheat_duration:
+            is_reheat = True
+
+    if is_reheat:
+        return base_lr * lr_reheat_multiplier, True
+    return base_lr, False
+
+
 def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_train=True, do_evaluate=True,
                   concurrent_games=10, games_per_iteration=None, mcts_sims=50, eval_games=2, eval_sims=20,
                   batch_size=512, num_res_blocks=None, num_channels=None, max_consecutive_rejections=5,
@@ -201,7 +245,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                   champion_archive_keep=25, buffer_archive_keep=3, random_baseline_interval=10,
                   random_baseline_games=20, random_baseline_sims=50, sentinel_checkpoint=None,
                   milestone_interval=25, milestone_games=100, milestone_sims=200, milestone_max_refs=5,
-                  temp_moves=35):
+                  temp_moves=35, lr_reheat_interval=40, lr_reheat_duration=5, lr_reheat_multiplier=3.0):
 
     if games_per_iteration is None:
         games_per_iteration = concurrent_games
@@ -359,16 +403,19 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         print(f"\nALPHAZERO ITERATION {current_iter} of {start_iteration + iterations}")
 
         # LR SCHEDULE TUNED FOR LARGER BATCH SIZES (e.g. 2048)
-        if current_iter <= 100:
-            current_lr = 0.001
-        elif current_iter <= 250:
-            current_lr = 0.0005
-        elif current_iter <= 700:
-            current_lr = 0.0001
-        else:
-            current_lr = 0.00003
+        # LR SCHEDULE TUNED FOR LARGER BATCH SIZES (e.g. 2048), with an
+        # optional periodic warm restart layered on top -- see
+        # compute_learning_rate() for why.
+        current_lr, lr_is_reheat = compute_learning_rate(
+            current_iter, lr_reheat_interval, lr_reheat_duration, lr_reheat_multiplier
+        )
 
-        print(f"Current Learning Rate: {current_lr}")
+        if lr_is_reheat:
+            print(f"Current Learning Rate: {current_lr}  <-- LR REHEAT active this iteration "
+                  f"(x{lr_reheat_multiplier:g} boost, every {lr_reheat_interval} iters for "
+                  f"{lr_reheat_duration} iter(s))")
+        else:
+            print(f"Current Learning Rate: {current_lr}")
 
         metrics = {'pi_loss': 0.0, 'v_loss': 0.0, 'entropy': 0.0}
         rand_wr, champ_wr, elo_diff, min_champ_wr, min_champ_lcb = 0.0, 0.0, 0.0, 0.0, 0.0
@@ -863,6 +910,9 @@ if __name__ == "__main__":
     parser.add_argument("--games-per-iteration", type=int, default=None, help="Total self-play games generated per iteration before training (default: same as --concurrent-games)")
     parser.add_argument("--mcts-sims", type=int, default=50, help="MCTS simulations per move during self-play")
     parser.add_argument("--temp-moves", type=int, default=20, help="Number of plies at the START of each self-play game sampled stochastically (proportional to MCTS visit counts) before switching to greedy (temperature=0) play. Higher values inject more exploration/diversity into training data but also more near-random outcomes that dilute the training signal; lower values produce cleaner but less diverse games. Was hardcoded to 45 previously -- if candidates are stuck reading as statistical noise around 50% vs the champion for many iterations, try lowering this before raising sims/games further")
+    parser.add_argument("--lr-reheat-interval", type=int, default=40, help="Every N iterations (once past the initial iteration-100 ramp-up), briefly multiply LR by --lr-reheat-multiplier for --lr-reheat-duration iterations, then drop back to the normal step-decay schedule. This is a periodic SGDR-style warm restart: it exists so a long stall isn't just the optimizer sitting motionless in a local minimum with no mechanism to ever get perturbed out of it. Set to 0 to disable and use the plain one-way step-decay schedule")
+    parser.add_argument("--lr-reheat-duration", type=int, default=5, help="How many consecutive iterations each LR reheat stays boosted before dropping back to the base schedule (see --lr-reheat-interval)")
+    parser.add_argument("--lr-reheat-multiplier", type=float, default=3.0, help="Multiplier applied to the base scheduled LR during a reheat window (see --lr-reheat-interval)")
     parser.add_argument("--eval-games", type=int, default=2, help="Games per matchup in evaluation (e.g. 40 on Kaggle)")
     parser.add_argument("--eval-sims", type=int, default=20, help="MCTS simulations per move during evaluation")
 
@@ -933,4 +983,7 @@ if __name__ == "__main__":
         milestone_games=args.milestone_games,
         milestone_sims=args.milestone_sims,
         milestone_max_refs=args.milestone_max_refs,
+        lr_reheat_interval=args.lr_reheat_interval,
+        lr_reheat_duration=args.lr_reheat_duration,
+        lr_reheat_multiplier=args.lr_reheat_multiplier,
     )
