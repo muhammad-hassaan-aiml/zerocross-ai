@@ -7,15 +7,52 @@ import sys
 import argparse
 import random
 import shutil
+import tempfile
 
 sys.path.extend(['.', 'build', '../build', os.path.join(os.getcwd(), 'build')])
 
 import torch
+import torch.multiprocessing as torch_mp
 from collections import deque
 from network import ZeroCrossNet
 from self_play import SelfPlayWorker
 from train import train_network
 from evaluate import Evaluator
+
+
+def _selfplay_worker_process(gpu_id, state_dict_cpu, net_kwargs, num_games, concurrent_games,
+                              mcts_sims, temp_moves, out_path, status_queue):
+    """
+    Runs one GPU's share of self-play in its own process.
+
+    CUDA needs its own context per device for this workload -- a single
+    process can't drive two GPUs in true parallel the way DataParallel does
+    for the training step, so each GPU gets a subprocess with its own copy
+    of the champion's weights. Results are handed back via a temp file
+    (out_path), not the multiprocessing Queue itself: a plain Queue's pipe
+    can deadlock on payloads this large (hundreds of MB of self-play
+    samples) if the parent doesn't drain it fast enough. The queue is only
+    used for the small completion signal + timing stats.
+    """
+    try:
+        device = torch.device(f"cuda:{gpu_id}")
+        net = ZeroCrossNet(**net_kwargs).to(device)
+        net.load_state_dict(state_dict_cpu)
+        net.eval()
+
+        worker = SelfPlayWorker(net, num_concurrent_games=concurrent_games,
+                                 mcts_simulations=mcts_sims, temperature_moves=temp_moves)
+        samples = worker.generate_data(total_games_to_play=num_games)
+        torch.save(samples, out_path)
+
+        status_queue.put({
+            'ok': True,
+            'aug_time': worker.total_augmentation_time,
+            'avg_batch_size': worker.avg_batch_size,
+            'num_samples': len(samples),
+        })
+    except Exception as e:
+        status_queue.put({'ok': False, 'error': repr(e)})
 
 
 def estimate_buffer_memory_mb(buffer):
@@ -364,11 +401,78 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             # can't silently drift back to train() from anywhere else.
             best_net.eval()
 
-            worker = SelfPlayWorker(best_net, num_concurrent_games=concurrent_games, mcts_simulations=mcts_sims, temperature_moves=temp_moves)
-            new_samples = worker.generate_data(total_games_to_play=games_per_iteration)
+            if num_gpus > 1:
+                # MULTI-GPU SELF-PLAY.
+                #
+                # Previously this phase only ever ran on gpu_ids[0]: best_net
+                # lives on `device` (cuda:{gpu_ids[0]}) and a single
+                # SelfPlayWorker was handed that one net, so every other GPU
+                # sat idle for the entire self-play phase -- the single
+                # biggest time cost of every iteration (only the training
+                # step used DataParallel across both GPUs). This splits
+                # games_per_iteration across all usable GPUs: each gets its
+                # own subprocess with its own copy of the current champion's
+                # weights on its own device, plays its share of the games,
+                # and the resulting samples are merged back below.
+                print(f"Splitting self-play across {num_gpus} GPUs {gpu_ids} "
+                      f"({games_per_iteration} games total)")
+
+                n_workers = num_gpus
+                base_games = games_per_iteration // n_workers
+                games_split = [base_games] * n_workers
+                games_split[0] += games_per_iteration - base_games * n_workers  # remainder to GPU0
+
+                # Concurrent-games is a per-GPU memory budget, so it's split
+                # too -- running the full --concurrent-games on every GPU
+                # simultaneously would multiply the memory footprint by
+                # num_gpus, not just parallelize compute.
+                base_concurrent = max(1, concurrent_games // n_workers)
+                concurrent_split = [base_concurrent] * n_workers
+
+                state_dict_cpu = {k: v.cpu() for k, v in best_net.state_dict().items()}
+                tmp_dir = tempfile.mkdtemp(prefix="selfplay_")
+                ctx = torch_mp.get_context('spawn')
+
+                procs, out_paths, queues = [], [], []
+                for w_idx, gpu_id in enumerate(gpu_ids):
+                    out_path = os.path.join(tmp_dir, f"samples_gpu{gpu_id}.pt")
+                    q = ctx.Queue()
+                    p = ctx.Process(
+                        target=_selfplay_worker_process,
+                        args=(gpu_id, state_dict_cpu, net_kwargs, games_split[w_idx],
+                              concurrent_split[w_idx], mcts_sims, temp_moves, out_path, q)
+                    )
+                    p.start()
+                    procs.append(p)
+                    out_paths.append(out_path)
+                    queues.append(q)
+
+                new_samples = []
+                aug_times, batch_sizes = [], []
+                for w_idx, (p, out_path, q, gpu_id) in enumerate(zip(procs, out_paths, queues, gpu_ids)):
+                    status = q.get()   # blocks until that GPU's worker signals done
+                    p.join()
+                    if not status.get('ok'):
+                        shutil.rmtree(tmp_dir, ignore_errors=True)
+                        raise RuntimeError(
+                            f"Self-play worker on GPU {gpu_id} failed: {status.get('error')}"
+                        )
+                    new_samples.extend(torch.load(out_path, weights_only=False))
+                    aug_times.append(status['aug_time'])
+                    batch_sizes.append(status['avg_batch_size'])
+                    print(f"  GPU {gpu_id}: {status['num_samples']} samples "
+                          f"from {games_split[w_idx]} games")
+
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                aug_duration = sum(aug_times)
+                avg_batch_size = sum(batch_sizes) / len(batch_sizes) if batch_sizes else 0.0
+            else:
+                worker = SelfPlayWorker(best_net, num_concurrent_games=concurrent_games, mcts_simulations=mcts_sims, temperature_moves=temp_moves)
+                new_samples = worker.generate_data(total_games_to_play=games_per_iteration)
+                aug_duration = worker.total_augmentation_time
+                avg_batch_size = worker.avg_batch_size
+
             gen_duration = time.time() - gen_start
-            aug_duration = worker.total_augmentation_time
-            avg_batch_size = worker.avg_batch_size
 
             replay_buffer.extend(new_samples)
             buffer_mb = estimate_buffer_memory_mb(replay_buffer)
