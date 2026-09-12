@@ -123,12 +123,12 @@ def plot_milestone_metrics(csv_path=None, save_dir=None):
         print(f"Milestone log not found at {csv_path}. It's only written once "
               f"--milestone-interval iterations have passed -- run the pipeline "
               f"longer, or check the path.")
-        return
+        return None
 
     df = pd.read_csv(csv_path)
     if df.empty:
         print("Milestone CSV is empty.")
-        return
+        return None
 
     os.makedirs(save_dir, exist_ok=True)
 
@@ -154,6 +154,7 @@ def plot_milestone_metrics(csv_path=None, save_dir=None):
     else:
         print("\nNo drift warnings: champion has cleared 50% LCB against every "
               "fixed reference checked so far.")
+    return below_floor
 
 
 if __name__ == "__main__":

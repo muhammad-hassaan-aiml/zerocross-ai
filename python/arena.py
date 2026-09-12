@@ -59,6 +59,22 @@ def name_for(path, iteration):
     return f"{base} (iter {iteration})" if iteration is not None else base
 
 
+def detect_usable_gpus():
+    """
+    Same usability check pipeline.py uses for training/self-play: compute
+    capability >= 6 (anything older can't run the autocast/mixed-precision
+    path the network forward pass uses). Returns a list of device indices,
+    e.g. [0, 1] on a T4x2 box, or [] if there's no usable GPU.
+    """
+    if not torch.cuda.is_available():
+        return []
+    usable = []
+    for i in range(torch.cuda.device_count()):
+        if torch.cuda.get_device_capability(i)[0] >= 6:
+            usable.append(i)
+    return usable
+
+
 def main():
     parser = argparse.ArgumentParser(description="ZeroCross Arena -- round-robin checkpoint comparison")
     parser.add_argument("--checkpoint", action="append", default=[], help="Path to a .pth checkpoint to include. Repeat for multiple")
@@ -89,8 +105,13 @@ def main():
     if args.num_channels is not None:
         net_kwargs['num_channels'] = args.num_channels
 
-    device = torch.device("cuda" if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 6) else "cpu")
-    print(f"Arena running on {device}. Loading {len(paths)} checkpoint(s)...")
+    gpu_ids = detect_usable_gpus()
+    device = torch.device(f"cuda:{gpu_ids[0]}") if gpu_ids else torch.device("cpu")
+    if gpu_ids:
+        print(f"Arena found {len(gpu_ids)} usable GPU(s) {gpu_ids}. Loading {len(paths)} checkpoint(s) "
+              f"on {device} (each matchup process rebuilds its own copy on its assigned GPU)...")
+    else:
+        print(f"Arena running on {device}. Loading {len(paths)} checkpoint(s)...")
 
     nets = {}
     for path in paths:
@@ -111,7 +132,11 @@ def main():
         sys.exit(1)
 
     evaluator = Evaluator(device=device)
-    results = evaluator.round_robin(nets, sims=args.sims, games_per_match=args.games)
+    results = evaluator.round_robin(
+        nets, sims=args.sims, games_per_match=args.games,
+        gpu_ids=gpu_ids if len(gpu_ids) > 1 else None,
+        net_kwargs=net_kwargs,
+    )
 
     with open(args.output_csv, mode='w', newline='') as f:
         writer = csv.writer(f)
