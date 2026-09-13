@@ -55,6 +55,26 @@ def _selfplay_worker_process(gpu_id, state_dict_cpu, net_kwargs, num_games, conc
         status_queue.put({'ok': False, 'error': repr(e)})
 
 
+def atomic_torch_save(obj, path):
+    """
+    Writes via a temp file in the same directory, then os.replace() (atomic
+    on POSIX filesystems, which is what Kaggle runs on) onto the final path.
+
+    Plain torch.save(obj, path) writes directly to the target file in place.
+    If the process is killed mid-write -- Kaggle's 12h wall-clock cutoff
+    landing exactly during a multi-GB replay-buffer save, an OOM-kill, a
+    kernel restart, anything abrupt -- that leaves a truncated file at
+    `path`, which the next session's torch.load() then fails to read
+    (EOFError: Ran out of input). With this helper, `path` is always either
+    the complete previous file or the complete new one; a mid-write kill
+    just leaves an orphaned .tmp file next to it instead of corrupting the
+    thing every future session depends on.
+    """
+    tmp_path = f"{path}.tmp-{os.getpid()}"
+    torch.save(obj, tmp_path)
+    os.replace(tmp_path, path)
+
+
 def estimate_buffer_memory_mb(buffer):
     if not buffer:
         return 0.0
@@ -402,7 +422,6 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         current_iter = i + 1
         print(f"\nALPHAZERO ITERATION {current_iter} of {start_iteration + iterations}")
 
-        # LR SCHEDULE TUNED FOR LARGER BATCH SIZES (e.g. 2048)
         # LR SCHEDULE TUNED FOR LARGER BATCH SIZES (e.g. 2048), with an
         # optional periodic warm restart layered on top -- see
         # compute_learning_rate() for why.
@@ -411,11 +430,11 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
         )
 
         if lr_is_reheat:
-            print(f"Current Learning Rate: {current_lr}  <-- LR REHEAT active this iteration "
+            print(f"Current Learning Rate: {current_lr:.6g}  <-- LR REHEAT active this iteration "
                   f"(x{lr_reheat_multiplier:g} boost, every {lr_reheat_interval} iters for "
                   f"{lr_reheat_duration} iter(s))")
         else:
-            print(f"Current Learning Rate: {current_lr}")
+            print(f"Current Learning Rate: {current_lr:.6g}")
 
         metrics = {'pi_loss': 0.0, 'v_loss': 0.0, 'entropy': 0.0}
         rand_wr, champ_wr, elo_diff, min_champ_wr, min_champ_lcb = 0.0, 0.0, 0.0, 0.0, 0.0
@@ -532,7 +551,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                 'date_saved': time.strftime("%Y %m %d %H %M %S"),
                 'data': list(replay_buffer)
             }
-            torch.save(buffer_data, buffer_path)
+            atomic_torch_save(buffer_data, buffer_path)
 
             # --- Buffer archiving is throttled instead of every iteration ---
             # Each archive is a FULL copy of the current buffer (can be
@@ -546,7 +565,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
             # Kaggle where /kaggle/working has a limited quota.
             if current_iter % buffer_archive_interval == 0:
                 archive_path = os.path.join(drive_dir, f"replay_buffer_iter_{current_iter}.pt")
-                torch.save(buffer_data, archive_path)
+                atomic_torch_save(buffer_data, archive_path)
                 print(f"Archived chunk saved to {archive_path}")
                 prune_numbered_files(drive_dir, "replay_buffer_iter_", ".pt", buffer_archive_keep)
 
@@ -661,7 +680,7 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
 
         if do_train:
             print("\n[4/4] Model Gating")
-            torch.save({
+            atomic_torch_save({
                 'iteration': current_iter,
                 'model_state_dict': raw_candidate.state_dict(),
                 'optimizer_state_dict': opt_state,
@@ -746,10 +765,10 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
                     'timestamp': time.time()
                 }
 
-                torch.save(checkpoint_data, model_path)
+                atomic_torch_save(checkpoint_data, model_path)
 
                 history_path = os.path.join(drive_dir, f"champion_gen_{current_iter}.pth")
-                torch.save(checkpoint_data, history_path)
+                atomic_torch_save(checkpoint_data, history_path)
                 print(f"Historical champion archived to {history_path}")
                 prune_numbered_files(drive_dir, "champion_gen_", ".pth", champion_archive_keep)
 
