@@ -214,6 +214,28 @@ def prune_numbered_files(drive_dir, prefix, suffix, keep_last_n):
             print(f"Could not delete {f}: {e}")
 
 
+def find_numbered_files_desc(drive_dir, prefix, suffix):
+    """
+    Returns [(iteration_number, full_path), ...] for every '<prefix><N><suffix>'
+    file in drive_dir, sorted HIGHEST N first. Shares the same filename
+    parsing convention as prune_numbered_files, so the two stay consistent.
+    """
+    try:
+        files = [f for f in os.listdir(drive_dir) if f.startswith(prefix) and f.endswith(suffix)]
+    except OSError:
+        return []
+
+    def _num(fname):
+        try:
+            return int(fname[len(prefix):-len(suffix)])
+        except ValueError:
+            return -1
+
+    numbered = [(n, os.path.join(drive_dir, f)) for f in files if (n := _num(f)) >= 0]
+    numbered.sort(key=lambda t: t[0], reverse=True)
+    return numbered
+
+
 def compute_learning_rate(iteration, lr_reheat_interval=40, lr_reheat_duration=5, lr_reheat_multiplier=3.0):
     """
     Base schedule is the original one-way step-decay (unchanged): LR only
@@ -387,17 +409,38 @@ def run_pipeline(iterations=100, max_buffer_size=1000000, do_generate=True, do_t
 
     replay_buffer = deque(maxlen=max_buffer_size)
 
+    checkpoint = None
+    buffer_loaded_from = None
     if os.path.exists(buffer_path):
         checkpoint = safe_torch_load(buffer_path)
         if checkpoint is not None:
-            print(f"Loading historical replay buffer from {buffer_path}")
-            if isinstance(checkpoint, dict) and 'data' in checkpoint:
-                replay_buffer.extend(checkpoint['data'])
-            else:
-                replay_buffer.extend(checkpoint)
-            print(f"Restored {len(replay_buffer)} historical samples to memory")
+            buffer_loaded_from = buffer_path
+
+    if checkpoint is None:
+        # Main buffer missing or corrupt -- fall back to the most recent
+        # periodic archive (replay_buffer_iter_N.pt) instead of dropping
+        # straight to empty. This is exactly the situation
+        # --buffer-archive-interval exists for: it trades a FEW iterations
+        # of lost data (whatever self-play happened since that archive was
+        # written) instead of losing the entire multi-million-sample buffer.
+        # If the newest archive is *also* unreadable, tries the next-newest,
+        # and so on, before finally giving up and starting empty.
+        for _, archive_path in find_numbered_files_desc(drive_dir, "replay_buffer_iter_", ".pt"):
+            checkpoint = safe_torch_load(archive_path)
+            if checkpoint is not None:
+                buffer_loaded_from = archive_path
+                print(f"Main replay buffer unavailable -- recovered from archive instead: {archive_path}")
+                break
+
+    if checkpoint is not None:
+        print(f"Loading historical replay buffer from {buffer_loaded_from}")
+        if isinstance(checkpoint, dict) and 'data' in checkpoint:
+            replay_buffer.extend(checkpoint['data'])
         else:
-            print("Starting with an empty replay buffer (no valid buffer file found).")
+            replay_buffer.extend(checkpoint)
+        print(f"Restored {len(replay_buffer)} historical samples to memory")
+    else:
+        print("Starting with an empty replay buffer (no valid buffer file found).")
 
     # Once consecutive_rejections has climbed to half of max_consecutive_rejections,
     # widen the evaluation for every subsequent iteration so the win-rate estimate
